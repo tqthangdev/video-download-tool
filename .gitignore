@@ -1,0 +1,162 @@
+# ==============================
+
+# Python
+
+# ==============================
+
+**pycache**/
+*.py[cod]
+*$py.class
+*.pyo
+*.pyd
+
+# Virtual environments
+
+.venv/
+venv/
+env/
+ENV/
+
+# Vendor packages (chỉ dùng khi --no-venv)
+
+vendor/
+
+# Portable Python downloaded by setup.ps1 (chỉ dùng khi máy không có Python)
+
+python/
+
+# Python tooling
+
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# ==============================
+
+# Runtime / Application Data
+
+# ==============================
+
+# SQLite database
+
+data/*.db
+data/*.db-*
+data/*.sqlite
+data/*.sqlite3
+
+# data json
+data/*.json
+data/*/*.json
+
+# Logs
+
+logs/
+*.log
+
+# Downloaded files
+
+downloads/
+
+# Playwright browsers
+
+ms-playwright/
+
+# Command Code (AI assistant session data)
+
+.commandcode/
+
+# Temporary files
+
+tmp/
+temp/
+*.tmp
+*.temp
+
+# ==============================
+
+# Build / Distribution
+
+# ==============================
+
+build/
+dist/
+*.spec
+*.spec.bak
+
+# PyInstaller
+
+*.manifest
+*.toc
+
+# ==============================
+
+# IDE
+
+# ==============================
+
+# JetBrains / PyCharm
+
+.idea/
+*.iml
+
+# VS Code
+
+.vscode/
+
+# ==============================
+
+# OS
+
+# ==============================
+
+# Windows
+
+Thumbs.db
+Thumbs.db:encryptable
+Desktop.ini
+$RECYCLE.BIN/
+
+# macOS
+
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Linux
+
+*~
+
+# ==============================
+
+# Environment / Secrets
+
+# ==============================
+
+.env
+.env.*
+!.env.example
+
+# ==============================
+
+# Misc
+
+# ==============================
+
+*.bak
+*.swp
+*.swo
+*.orig
+*.html
+*.csv
+
+# ==============================
+feedback.md
+rules.md
+account.md
+flow.md
+core/auth/sites_config.json
+
+# Chromium profile used by the stealth (nodriver) fallback
+data/stealth_profile/

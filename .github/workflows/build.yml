@@ -1,0 +1,208 @@
+name: Build
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-latest
+          - windows-latest
+
+    steps:
+      # ==========================================
+      # CHECKOUT
+      # ==========================================
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # ==========================================
+      # PYTHON
+      # ==========================================
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+          cache: pip
+
+      # ==========================================
+      # BUILD
+      # ==========================================
+
+      - name: Build Linux
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          chmod +x build.sh
+          ./build.sh
+
+      - name: Build Windows
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          .\build.ps1
+
+      # ==========================================
+      # VERIFY BUILD
+      # ==========================================
+
+      - name: Verify Linux build
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -e
+
+          test -f dist/VideoDownloadTool/VideoDownloadTool
+
+          echo "=== Linux build ==="
+          ls -lah dist/VideoDownloadTool
+
+          echo "=== Build size ==="
+          du -sh dist/VideoDownloadTool
+
+      - name: Verify Windows build
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          if (!(Test-Path "dist\VideoDownloadTool\VideoDownloadTool.exe")) {
+              Write-Error "VideoDownloadTool.exe was not created."
+              exit 1
+          }
+
+          Write-Host "=== Windows build ==="
+          Get-ChildItem "dist\VideoDownloadTool"
+
+          $Size = (
+              Get-ChildItem `
+                  "dist\VideoDownloadTool" `
+                  -Recurse `
+                  -File |
+              Measure-Object Length -Sum
+          ).Sum
+
+          Write-Host "Build size: $([math]::Round($Size / 1MB, 2)) MB"
+
+      # ==========================================
+      # CREATE ZIP - LINUX
+      # ==========================================
+
+      - name: Package Linux build
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -e
+
+          cd dist
+
+          zip -r \
+            ../VideoDownloadTool-linux.zip \
+            VideoDownloadTool
+
+          cd ..
+
+          ls -lh VideoDownloadTool-linux.zip
+
+      # ==========================================
+      # CREATE ZIP - WINDOWS
+      # ==========================================
+
+      - name: Package Windows build
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          Compress-Archive `
+            -Path "dist\VideoDownloadTool" `
+            -DestinationPath "VideoDownloadTool-windows.zip" `
+            -Force
+
+          Get-Item "VideoDownloadTool-windows.zip"
+
+      # ==========================================
+      # UPLOAD ARTIFACT
+      # ==========================================
+
+      - name: Upload Linux package
+        if: runner.os == 'Linux'
+        uses: actions/upload-artifact@v4
+        with:
+          name: VideoDownloadTool-linux
+          path: VideoDownloadTool-linux.zip
+          if-no-files-found: error
+
+      - name: Upload Windows package
+        if: runner.os == 'Windows'
+        uses: actions/upload-artifact@v4
+        with:
+          name: VideoDownloadTool-windows
+          path: VideoDownloadTool-windows.zip
+          if-no-files-found: error
+
+  # ==========================================
+  # PUBLISH RELEASE
+  # ==========================================
+
+  release:
+    name: Publish release
+
+    if: startsWith(github.ref, 'refs/tags/')
+
+    needs: build
+
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: write
+
+    steps:
+      # ==========================================
+      # DOWNLOAD BUILDS
+      # ==========================================
+
+      - name: Download Linux package
+        uses: actions/download-artifact@v4
+        with:
+          name: VideoDownloadTool-linux
+          path: release
+
+      - name: Download Windows package
+        uses: actions/download-artifact@v4
+        with:
+          name: VideoDownloadTool-windows
+          path: release
+
+      # ==========================================
+      # VERIFY RELEASE FILES
+      # ==========================================
+
+      - name: Verify release files
+        shell: bash
+        run: |
+          set -e
+
+          echo "=== Release files ==="
+          ls -lh release
+
+          test -f release/VideoDownloadTool-linux.zip
+          test -f release/VideoDownloadTool-windows.zip
+
+      # ==========================================
+      # CREATE GITHUB RELEASE
+      # ==========================================
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            release/VideoDownloadTool-linux.zip
+            release/VideoDownloadTool-windows.zip
+          generate_release_notes: true
