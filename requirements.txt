@@ -2,10 +2,6 @@
 yt-dlp
 requests
 
-# Optional login/session support (core/auth)
-beautifulsoup4
-lxml
-
 # GUI
 PyQt6
 qasync

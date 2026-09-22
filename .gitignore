@@ -156,7 +156,6 @@ feedback.md
 rules.md
 account.md
 flow.md
-core/auth/sites_config.json
 
 # Chromium profile used by the stealth (nodriver) fallback
 data/stealth_profile/
