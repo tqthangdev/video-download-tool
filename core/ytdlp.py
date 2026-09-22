@@ -29,7 +29,6 @@ from core.errors import (
     translate_ytdlp_error,
 )
 from core.format_selector import VIDEO, VideoInfo, normalize_formats
-from core.gemini import TITLE_MAX_CHARS, shorten_title
 from core.logger import logger
 from core.utils import build_output_template, clean_title, resolve_output_file
 
@@ -486,27 +485,11 @@ class YtdlpClient:
 
         return self._resolve_manifest(candidates, wanted_id=fmt.get("format_id"))
 
-    def _maybe_shorten_title(self, title: str) -> str:
-        """Shorten an over-long title with Gemini when an API key is set.
-
-        Without a usable key (or on any failure) the title is returned as-is.
-        """
-        if len(title) <= TITLE_MAX_CHARS:
-            return title
-
-        shortened = shorten_title(title, str(self.config.get("gemini_api") or ""))
-        if not shortened:
-            return title
-
-        logger.info(f"[gemini] title shortened: {len(title)} -> {len(shortened)} chars")
-        return shortened
-
     def _to_video_info(self, info: dict, url: str) -> VideoInfo:
         # Spam links are cut out of the title; if nothing but the link was left,
         # keep whatever yt-dlp gave us rather than storing an empty title.
         raw_title = info.get("title") or ""
         title = clean_title(raw_title) or raw_title or url
-        title = self._maybe_shorten_title(title)
 
         return VideoInfo(
             url=url,

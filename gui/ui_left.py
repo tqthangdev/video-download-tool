@@ -394,7 +394,6 @@ class _ConfigDialog(QDialog):
         ("field_video_quality", "default_video_quality", "field_video_quality_desc"),
         ("field_audio_bitrate", "default_audio_bitrate", "field_audio_bitrate_desc"),
         ("field_prefer", "prefer", "field_prefer_desc"),
-        ("field_gemini_api", "gemini_api", "field_gemini_api_desc"),
     ]
 
     @staticmethod

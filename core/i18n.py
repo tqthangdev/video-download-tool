@@ -99,8 +99,6 @@ TRANSLATIONS = {
         "field_prefer_desc": "Khi thêm từ file: ưu tiên chọn video hay audio làm mặc định.\n\nChọn trong danh sách: Video hoặc Audio.",
         "prefer_video": "Video",
         "prefer_audio": "Audio",
-        "field_gemini_api": "Gemini API key",
-        "field_gemini_api_desc": "Dán API key của Google Gemini để tự động rút ngắn tiêu đề video quá dài (trên 100 ký tự).\n\nĐể trống nếu không dùng — app giữ nguyên tiêu đề như trước.\n\nLấy key tại: https://aistudio.google.com/app/apikey",
         # Queue status
     },
     "en": {
@@ -201,8 +199,6 @@ TRANSLATIONS = {
         "field_prefer_desc": "When adding from a file: prefer video or audio as the default selection.\n\nPick from the list: Video or Audio.",
         "prefer_video": "Video",
         "prefer_audio": "Audio",
-        "field_gemini_api": "Gemini API key",
-        "field_gemini_api_desc": "Paste a Google Gemini API key to automatically shorten video titles longer than 100 characters.\n\nLeave empty to disable it — titles are then kept as they are.\n\nGet a key at: https://aistudio.google.com/app/apikey",
         # Queue status
     },
 }

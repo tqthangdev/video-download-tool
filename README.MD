@@ -12,7 +12,6 @@ The GUI is PyQt6; yt-dlp does the extraction and downloading. The application it
 - **Pause / resume / delete**, per-job progress (percent, downloaded size, speed, ETA) and clear-done.
 - **Batch import** — load a list of URLs from a `.txt` file; the default quality/bitrate from the settings is applied to each.
 - **Generic media discovery** — when an extractor returns nothing usable (common on sites and their clones that build the player with plain JavaScript), the page and the player it loads are scanned for media URLs, and the better manifest is used. This needs no per-site configuration.
-- **Optional Gemini title shortening** — long titles can be shortened by Gemini into filename-friendly labels. Requires your own API key; without a key (or when the model refuses) the original title is kept.
 - **Auto shutdown** when the queue finishes, with a countdown.
 - Bilingual UI (Vietnamese / English).
 
@@ -73,7 +72,6 @@ Both launchers install the dependencies automatically if they are missing. Or ru
 | `default_video_quality` | yes | Pre-selected quality when importing from a file (e.g. `720p`) |
 | `default_audio_bitrate` | yes | Pre-selected MP3 bitrate when importing from a file |
 | `prefer` | yes | Which kind of format is pre-selected (`video` or `audio`) |
-| `gemini_api` | yes | Gemini API key for optional title shortening; empty disables it |
 | `language` | yes | UI language (`vi` / `en`) |
 | `default_audio_bitrates` | no | Bitrates offered in the MP3 group |
 | `request_timeout` | no | Per-request timeout, seconds |
