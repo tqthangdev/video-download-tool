@@ -15,7 +15,7 @@ from core.i18n import tr
 
 ROW_HEIGHT = 40
 
-TERMINAL_STATUSES = ("Done", "Failed")
+TERMINAL_STATUSES = ("Done",)
 
 
 class RightPanel(QWidget):

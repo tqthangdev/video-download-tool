@@ -375,6 +375,11 @@ class MainWindow(QWidget):
     async def _restore_session(self):
         base_path = self.left.path_input.text().strip()
 
+        # One-off cleanup of temp/part/ytdl files orphaned by a previous
+        # crash/kill before this session's downloads even start, so
+        # verify_output() below isn't fooled by leftovers from before.
+        await self._sweep_orphaned_partials_once(base_path)
+
         queue = self.right.queue_list
         queue.setUpdatesEnabled(False)
         try:
@@ -390,6 +395,44 @@ class MainWindow(QWidget):
 
         self._update_buttons()
 
+    async def _sweep_orphaned_partials_once(self, base_path: str):
+        from core.utils import DATA_DIR, sweep_orphaned_partials
+        from core.downloader import repair_broken_outputs
+
+        marker = DATA_DIR / ".swept_v1"
+        if marker.exists():
+            return
+
+        loop = asyncio.get_running_loop()
+
+        # Sweep every save_path any job has ever used, plus the current
+        # default path, so folders no longer referenced by the current
+        # base_path are still cleaned.
+        paths = {job.save_path for job in self.engine.db.all_jobs()}
+        if base_path:
+            paths.add(Path(base_path))
+
+        def _do_sweep():
+            removed_files = 0
+            for p in paths:
+                removed_files += len(sweep_orphaned_partials(p))
+
+            # Deep check: 'done' jobs whose output is actually corrupt/truncated
+            # (size > 0 but ffprobe can't read it) get bounced back to waiting.
+            repaired_jobs = repair_broken_outputs(self.engine.db)
+
+            return removed_files, repaired_jobs
+
+        try:
+            removed_files, repaired_jobs = await loop.run_in_executor(None, _do_sweep)
+            if removed_files:
+                logger.info(f"[startup] swept {removed_files} orphaned partial files")
+            if repaired_jobs:
+                logger.info(f"[startup] repaired {repaired_jobs} jobs with broken output files")
+        except Exception:
+            logger.exception("Failed to sweep orphaned/broken files")
+        finally:
+            marker.touch()
     # =========================
     # ENGINE CONTROL
     # =========================

@@ -22,7 +22,7 @@ from core.job_manager import (
     JobManager,
 )
 from core.logger import logger
-from core.utils import CONFIG
+from core.utils import CONFIG, remove_partial_files
 from core.ytdlp import YtdlpClient, ffmpeg_available
 
 
@@ -92,7 +92,7 @@ class Engine(QObject):
         return "queued"
 
     async def del_job(self, key: str) -> bool:
-        """Remove a job entirely: queue, active download, and DB record."""
+        """Remove a job entirely: queue, active download, DB record, temp files."""
         existing = None
         for job in self.db.all_jobs():
             if job.key == key:
@@ -101,11 +101,13 @@ class Engine(QObject):
 
         # Drop it from the queue if it is only waiting.
         was_queued = False
+        queued_job = None
         pending = []
         while not self.queue.empty():
             queued = self.queue.get_nowait()
             if queued.key == key:
                 was_queued = True
+                queued_job = queued
                 continue
             pending.append(queued)
         for queued in pending:
@@ -118,6 +120,15 @@ class Engine(QObject):
 
         if existing:
             await self.db.adelete(existing.id)
+
+        # A running download still has its .part file open (yt-dlp keeps writing
+        # until the cancel flag is seen), so the worker removes those once it has
+        # actually stopped. Idle jobs have no writer, so clean them right away —
+        # together with the media file their leftovers belong to (flow.md #27).
+        if not was_running:
+            job = queued_job or existing
+            if job is not None:
+                remove_partial_files(job.save_path, job.title, include_output=True)
 
         return bool(existing or was_queued or was_running)
 
@@ -190,10 +201,21 @@ class Engine(QObject):
                 result = await loop.run_in_executor(None, self._download_sync, job)
 
                 if job.key in self.deleted_keys:
+                    self.deleted_keys.discard(job.key)
                     logger.info(f"[{job.title}] Job deleted mid-download, skipping.")
+                    # yt-dlp has stopped by now, so its partial files are no
+                    # longer being written and can be removed safely, along with
+                    # the half-written media file they belong to (flow.md #27).
+                    if job.key not in self.active_jobs:
+                        remove_partial_files(job.save_path, job.title, include_output=True)
                 elif result.ok:
                     await self.db.aupdate_output(job.id, result.output_file)
                     await self.db.aupdate_status(job.id, STATUS_DONE)
+                    # A resumed job can finish through post-processing, or be
+                    # skipped because the output already exists; either way any
+                    # temporary file left from the interrupted run is now stale.
+                    # Only the temporaries go — this output is the good one.
+                    remove_partial_files(job.save_path, job.title)
                     self.progress.emit(job.key, "Done")
                     logger.info(f"DONE: {job.title} -> {result.output_file}")
                 elif result.error is not None and result.error.code == CANCELLED:
@@ -203,6 +225,10 @@ class Engine(QObject):
                     message = str(result.error) if result.error else "Download failed."
                     await self.db.aupdate_error(job.id, message)
                     await self.db.aupdate_status(job.id, STATUS_FAILED)
+                    # Failed is terminal: nothing will resume this job, so its
+                    # scratch files and the half-written media file they belong
+                    # to must not be left on disk (flow.md #27).
+                    remove_partial_files(job.save_path, job.title, include_output=True)
                     self.progress.emit(job.key, "Failed")
                     logger.warning(f"[{job.title}] Failed: {message}")
 

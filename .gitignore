@@ -40,15 +40,7 @@ htmlcov/
 # ==============================
 
 # SQLite database
-
-data/*.db
-data/*.db-*
-data/*.sqlite
-data/*.sqlite3
-
-# data json
-data/*.json
-data/*/*.json
+data/
 
 # Logs
 
