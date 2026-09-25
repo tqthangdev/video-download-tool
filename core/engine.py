@@ -22,7 +22,7 @@ from core.job_manager import (
     JobManager,
 )
 from core.logger import logger
-from core.utils import CONFIG, remove_partial_files
+from core.utils import CONFIG, cleanup_orphan_temp_dirs, remove_job_temp_dir
 from core.ytdlp import YtdlpClient, ffmpeg_available
 
 
@@ -47,6 +47,7 @@ class Engine(QObject):
         self.active_jobs: dict[str, Job] = {}
         self.deleted_keys: set[str] = set()
         self._run_task = None
+        self.processing_jobs: set[str] = set()
 
     def ffmpeg_available(self) -> bool:
         return ffmpeg_available()
@@ -121,14 +122,14 @@ class Engine(QObject):
         if existing:
             await self.db.adelete(existing.id)
 
-        # A running download still has its .part file open (yt-dlp keeps writing
-        # until the cancel flag is seen), so the worker removes those once it has
-        # actually stopped. Idle jobs have no writer, so clean them right away —
-        # together with the media file their leftovers belong to (flow.md #27).
+        # A running download still has its scratch folder open (yt-dlp keeps
+        # writing until the cancel flag is seen), so the worker removes it once
+        # the download has actually stopped. Idle jobs have no writer, so their
+        # scratch folder can go right away (flow.md #27).
         if not was_running:
             job = queued_job or existing
             if job is not None:
-                remove_partial_files(job.save_path, job.title, include_output=True)
+                remove_job_temp_dir(job.save_path, job.id)
 
         return bool(existing or was_queued or was_running)
 
@@ -143,26 +144,38 @@ class Engine(QObject):
         self._run_task = asyncio.ensure_future(self._run_workers())
 
     async def stop(self):
+        """Stop active downloads without deleting their .part files."""
+        if not self.running and not self.workers:
+            return
+
         self.running = False
 
+        # Snapshot active jobs before workers remove themselves from active_jobs.
         active = list(self.active_jobs.values())
-        self.db.update_status_bulk([job.id for job in active if job.id], STATUS_PAUSED)
 
-        for task in self.workers:
-            task.cancel()
-        self.workers.clear()
-        self.active_jobs.clear()
-
+        # Do NOT cancel worker tasks.
+        #
+        # yt-dlp runs in a thread-pool executor. Cancelling the asyncio worker
+        # would not reliably stop the underlying yt-dlp thread.
+        #
+        # Instead, should_cancel() notices running=False and the progress hook
+        # raises _Cancelled. yt-dlp then exits while keeping its .part file.
         if self._run_task:
             try:
                 await self._run_task
-            except (asyncio.CancelledError, Exception):
+            except asyncio.CancelledError:
                 pass
-            self._run_task = None
+            finally:
+                self._run_task = None
 
-        # Re-queue the paused jobs so Resume re-runs them with the same format.
+        # All active yt-dlp downloads have stopped at this point.
+        # Re-queue them so the next Start resumes the existing .part files.
         for job in active:
+            if job.key in self.processing_jobs:
+                continue
+
             job.status = STATUS_PAUSED
+            self.progress.emit(job.key, "Paused")
             await self.queue.put(job)
 
     async def _run_workers(self):
@@ -203,19 +216,16 @@ class Engine(QObject):
                 if job.key in self.deleted_keys:
                     self.deleted_keys.discard(job.key)
                     logger.info(f"[{job.title}] Job deleted mid-download, skipping.")
-                    # yt-dlp has stopped by now, so its partial files are no
-                    # longer being written and can be removed safely, along with
-                    # the half-written media file they belong to (flow.md #27).
+                    # yt-dlp has stopped by now, so its scratch folder is no
+                    # longer being written and can be removed safely (flow.md #27).
                     if job.key not in self.active_jobs:
-                        remove_partial_files(job.save_path, job.title, include_output=True)
+                        remove_job_temp_dir(job.save_path, job.id)
                 elif result.ok:
                     await self.db.aupdate_output(job.id, result.output_file)
                     await self.db.aupdate_status(job.id, STATUS_DONE)
-                    # A resumed job can finish through post-processing, or be
-                    # skipped because the output already exists; either way any
-                    # temporary file left from the interrupted run is now stale.
-                    # Only the temporaries go — this output is the good one.
-                    remove_partial_files(job.save_path, job.title)
+                    # The output was moved out of the scratch folder already;
+                    # this clears whatever a resumed run left behind.
+                    remove_job_temp_dir(job.save_path, job.id)
                     self.progress.emit(job.key, "Done")
                     logger.info(f"DONE: {job.title} -> {result.output_file}")
                 elif result.error is not None and result.error.code == CANCELLED:
@@ -226,9 +236,8 @@ class Engine(QObject):
                     await self.db.aupdate_error(job.id, message)
                     await self.db.aupdate_status(job.id, STATUS_FAILED)
                     # Failed is terminal: nothing will resume this job, so its
-                    # scratch files and the half-written media file they belong
-                    # to must not be left on disk (flow.md #27).
-                    remove_partial_files(job.save_path, job.title, include_output=True)
+                    # scratch folder must not be left on disk (flow.md #27).
+                    remove_job_temp_dir(job.save_path, job.id)
                     self.progress.emit(job.key, "Failed")
                     logger.warning(f"[{job.title}] Failed: {message}")
 
@@ -241,30 +250,64 @@ class Engine(QObject):
                 self.progress.emit(job.key, "Failed")
             finally:
                 self.active_jobs.pop(job.key, None)
+                self.processing_jobs.discard(job.key)
                 self.queue.task_done()
 
-    def _download_sync(self, job: Job):
+    def _download_sync(self, job):
         """Runs in the thread pool (blocking yt-dlp work)."""
 
         def should_cancel() -> bool:
+            # Once yt-dlp has finished downloading and entered post-processing,
+            # Pause must not interrupt the job.
+            if job.key in self.processing_jobs:
+                return job.key in self.deleted_keys
+
             return not self.running or job.key in self.deleted_keys
 
         def on_progress(event: dict):
-            if self.running:
+            status = event.get("status")
+
+            if status == "finished":
+                self.processing_jobs.add(job.key)
+
+            if self.running or job.key in self.processing_jobs:
                 from core.downloader import format_progress
 
                 self.progress.emit(job.key, format_progress(event))
 
         return self.downloader.download_job(
-            job, progress=on_progress, should_cancel=should_cancel
+            job,
+            progress=on_progress,
+            should_cancel=should_cancel,
         )
 
     # ------------------------------------------------------------------
     # RESTORE / PATH SYNC
     # ------------------------------------------------------------------
 
+    def _remove_dead_temp_dirs(self, base_path: str | None = None):
+        """Drop scratch folders whose job no longer exists (flow.md #27).
+
+        Scratch folders of restorable jobs are kept so yt-dlp can resume the
+        partial download it left there (flow.md #29); the rest are dead weight.
+        """
+        keep_ids = {job.id for job in self.db.get_restorable_jobs()}
+        paths = {job.save_path for job in self.db.all_jobs()}
+        if base_path:
+            paths.add(Path(base_path))
+
+        try:
+            removed = sum(cleanup_orphan_temp_dirs(p, keep_ids) for p in paths)
+        except OSError as exc:
+            logger.warning(f"Could not clean up download temp folders: {exc}")
+            return
+
+        if removed:
+            logger.info(f"Removed {removed} orphaned download temp folder(s)")
+
     async def restore_session(self, base_path: str | None = None):
         """Restore incomplete jobs from the previous session (flow.md #31)."""
+        self._remove_dead_temp_dirs(base_path)
         jobs = self.db.get_restorable_jobs()
         total = len(jobs)
 

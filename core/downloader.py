@@ -6,8 +6,6 @@ into a human-readable status string, and verifies the produced file.
 
 from __future__ import annotations
 
-import subprocess
-import shutil
 from pathlib import Path
 
 from core.errors import OUTPUT_MISSING, app_error
@@ -24,67 +22,6 @@ def verify_output(path) -> bool:
         return candidate.is_file() and candidate.stat().st_size > 0
     except OSError:
         return False
-
-
-def verify_media_integrity(path, timeout: int = 15) -> bool:
-    """True if ffprobe can read the file's duration without error.
-
-    A file can exist at its final name with size > 0 yet still be a
-    truncated write (interrupted cross-filesystem copy, disk full, killed
-    mid-rename) — verify_output()'s size-only check can't catch that.
-    Used as a deeper, slower check during the one-off startup sweep, not
-    on the hot resume path (ffprobe has to decode the file, so it's too
-    slow to run on every skip-or-redownload decision).
-    """
-    if shutil.which("ffprobe") is None:
-        return True  # no ffprobe available, fall back to size-only check
-
-    try:
-        result = subprocess.run(
-            [
-                "ffprobe", "-v", "error",
-                "-show_entries", "format=duration",
-                "-of", "default=noprint_wrappers=1:nokey=1",
-                str(path),
-            ],
-            capture_output=True, text=True, timeout=timeout,
-        )
-    except (subprocess.TimeoutExpired, OSError):
-        return False
-
-    if result.returncode != 0 or result.stderr.strip():
-        return False
-
-    try:
-        return float(result.stdout.strip()) > 0
-    except ValueError:
-        return False
-
-
-def repair_broken_outputs(db) -> int:
-    """Bounce 'done' jobs whose output is actually corrupt/truncated back
-    to waiting, deleting the broken file so the resume path redownloads
-    cleanly instead of skipping a bad file (flow.md sweep-on-restore)."""
-    from core.logger import logger
-    from core.job_manager import STATUS_DONE, STATUS_WAITING
-
-    fixed = 0
-    for job in db.all_jobs():
-        if job.status != STATUS_DONE:
-            continue
-        if job.output_file and verify_output(job.output_file) and verify_media_integrity(job.output_file):
-            continue
-
-        if job.output_file:
-            try:
-                Path(job.output_file).unlink(missing_ok=True)
-            except OSError as exc:
-                logger.warning(f"[repair] could not remove broken output {job.output_file}: {exc}")
-
-        db.update_status(job.id, STATUS_WAITING)
-        db.update_output(job.id, None)
-        fixed += 1
-    return fixed
 
 
 def _human_bytes(value) -> str:

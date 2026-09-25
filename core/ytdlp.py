@@ -13,6 +13,7 @@ import os
 import re
 import shutil
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Callable, Optional
 from urllib.parse import urljoin, urlparse
 
@@ -30,7 +31,7 @@ from core.errors import (
 )
 from core.format_selector import VIDEO, VideoInfo, normalize_formats
 from core.logger import logger
-from core.utils import build_output_template, clean_title, resolve_output_file
+from core.utils import build_output_template, clean_title, job_temp_dir, resolve_output_file
 
 
 class _Cancelled(Exception):
@@ -162,6 +163,9 @@ class YtdlpClient:
             "logger": _YtdlpLogger(),
             "socket_timeout": int(self.config.get("request_timeout", 30)),
             "retries": int(self.config.get("download_retry", 3)),
+            # Keep partial downloads and resume them on the next run.
+            "continuedl": True,
+            "nopart": False,
         }
         opts.update(self._cookies_opts())
         if extra:
@@ -529,10 +533,11 @@ class YtdlpClient:
             else:
                 logger.warning(f"[{job.title}] could not refresh the media manifest; retrying the page")
 
+        temp_dir = job_temp_dir(job.save_path, job.id)
         opts = self._base_opts({
             "format": fmt.get("format_id") or "best",
             "outtmpl": build_output_template(job.title),
-            "paths": {"home": str(job.save_path)},
+            "paths": {"home": str(temp_dir)},
             "progress_hooks": [self._make_progress_hook(on_progress, should_cancel)],
         })
         if manifest_headers:
@@ -549,7 +554,7 @@ class YtdlpClient:
             }]
 
         try:
-            job.save_path.mkdir(parents=True, exist_ok=True)
+            temp_dir.mkdir(parents=True, exist_ok=True)
             with yt_dlp.YoutubeDL(opts) as ydl:
                 ydl.download([target_url])
         except _Cancelled:
@@ -564,11 +569,30 @@ class YtdlpClient:
         if should_cancel is not None and should_cancel():
             return DownloadResult(False, error=app_error(CANCELLED))
 
-        output_file = resolve_output_file(job.save_path, job.title, output_ext)
-        if output_file is None:
-            return DownloadResult(False, error=app_error(OUTPUT_MISSING))
+        return self._move_output_out(job, temp_dir, output_ext)
 
-        return DownloadResult(True, output_file=str(output_file))
+    @staticmethod
+    def _move_output_out(job, temp_dir: Path, output_ext: str) -> DownloadResult:
+        """Move the finished file out of the scratch folder (flow.md #27).
+
+        Same-filesystem rename, so the save folder gets the file complete or
+        not at all. Whatever else the scratch folder holds (``.part``,
+        ``.ytdl``, ``.temp.*``) is discarded with it.
+        """
+        produced = resolve_output_file(temp_dir, job.title, output_ext)
+        try:
+            if produced is None:
+                return DownloadResult(False, error=app_error(OUTPUT_MISSING))
+
+            job.save_path.mkdir(parents=True, exist_ok=True)
+            final_path = job.save_path / produced.name
+            shutil.move(str(produced), str(final_path))
+            return DownloadResult(True, output_file=str(final_path))
+        except OSError as exc:
+            logger.error(f"[{job.title}] could not move output out of the temp folder: {exc}")
+            return DownloadResult(False, error=translate_ytdlp_error(exc))
+        finally:
+            shutil.rmtree(temp_dir, ignore_errors=True)
 
     @staticmethod
     def _make_progress_hook(on_progress, should_cancel):

@@ -9,7 +9,8 @@ The GUI is PyQt6; yt-dlp does the extraction and downloading. The application it
 - **Preview before download** — title, thumbnail, duration and every available format for the URL.
 - **Format picker** — MP4 qualities (e.g. `360p … 1080p`) and MP3 bitrates, as radio buttons. The actual yt-dlp format id is kept internally; the label is only presentation.
 - **Queue with a SQLite job store** — a job is one URL + one selected format, so the same video can be queued at several qualities. Jobs survive restarts and are restored on the next launch.
-- **Pause / resume / delete**, per-job progress (percent, downloaded size, speed, ETA) and clear-done.
+- **Pause / resume / delete**, per-job progress (percent, downloaded size, speed, ETA) and clear-done. Interrupted downloads keep their partial data and continue where they left off.
+- **Clean output folder** — a job downloads into a hidden `.temp/<job_id>/` folder inside the output directory and only the finished file is moved out, so the folder never shows half-written files.
 - **Batch import** — load a list of URLs from a `.txt` file; the default quality/bitrate from the settings is applied to each.
 - **Generic media discovery** — when an extractor returns nothing usable (common on sites and their clones that build the player with plain JavaScript), the page and the player it loads are scanned for media URLs, and the better manifest is used. This needs no per-site configuration.
 - **Auto shutdown** when the queue finishes, with a countdown.
@@ -81,7 +82,7 @@ Both launchers install the dependencies automatically if they are missing. Or ru
 
 Authentication for sites that need it is left to yt-dlp: point `cookies_file` at an exported `cookies.txt`, or let `cookies_from_browser` read them straight from your browser.
 
-Output files are named after the video title (`<title>.mp4` / `<title>.mp3`). Titles longer than the filesystem limit are truncated safely, and spam links embedded in titles are stripped.
+Output files are named after the video title (`<title>.mp4` / `<title>.mp3`). Titles longer than the filesystem limit are truncated safely, and spam links embedded in titles are stripped. While a job is running its data stays in `<output>/.temp/<job_id>/` and is moved into the output folder once complete, so partially downloaded files never appear there; scratch folders left by removed jobs are cleaned up on the next launch.
 
 ## Build
 

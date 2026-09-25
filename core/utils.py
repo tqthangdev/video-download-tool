@@ -1,6 +1,7 @@
 import glob as glob_module
 import json
 import re
+import shutil
 import sys
 from pathlib import Path
 
@@ -288,46 +289,52 @@ def is_partial_name(name: str) -> bool:
     return bool(_PARTIAL_NAME_RE.search(name))
 
 
-# Reverse of the markers above: strip them back off a temporary name to find
-# the media file the scratch belongs to. ``Name.temp.mp4`` and
-# ``Name.mp4.part`` both point at ``Name.mp4``.
-_PARTIAL_TAIL_RE = re.compile(r"\.(?:part|ytdl)(?:-Frag\d+)?(?:\.part)?$", re.IGNORECASE)
-_PARTIAL_TEMP_RE = re.compile(r"\.temp(?=\.[^.]+$)", re.IGNORECASE)
+# ================= DOWNLOAD SCRATCH FOLDERS (flow.md #27, #29) =================
+
+# yt-dlp downloads and post-processes inside a per-job scratch folder
+# (``<save_path>/.temp/<job_id>``). The folder name is the SQLite job id, so it
+# stays the same across sessions and yt-dlp can resume the ``.part`` file it
+# left there (flow.md #29). The finished file is then moved out with a
+# same-filesystem rename, so the save folder only ever receives complete
+# outputs, and cleanup is a single rmtree of the job's scratch folder.
+TEMP_DIR_NAME = ".temp"
 
 
-def _partial_base_stem(name: str) -> str:
-    """Stem of the media file a temporary name belongs to (flow.md #27).
+def job_temp_dir(save_path, job_id) -> Path:
+    """Scratch folder yt-dlp downloads one job into."""
+    return Path(save_path) / TEMP_DIR_NAME / str(job_id)
 
-    ``foo.mp4.part`` / ``foo.mp4.part-Frag3.part`` / ``foo.mp4.ytdl`` and
-    ``foo.temp.mp4`` all give ``foo``; a fragment partial keeps its own
-    stem, so ``foo.f137.mp4.part`` gives ``foo.f137`` and never touches the
-    merged ``foo.mp4``.
+
+def remove_job_temp_dir(save_path, job_id) -> None:
+    """Delete a job's scratch folder with everything left in it."""
+    if job_id is None:
+        return
+    shutil.rmtree(job_temp_dir(save_path, job_id), ignore_errors=True)
+
+
+def cleanup_orphan_temp_dirs(save_path, keep_ids) -> int:
+    """Delete ``.temp/<job_id>`` folders whose job no longer exists.
+
+    Folders in ``keep_ids`` (jobs still restorable) are kept so their partial
+    download can resume.
     """
-    stripped = _PARTIAL_TAIL_RE.sub("", name)
-    stripped = _PARTIAL_TEMP_RE.sub("", stripped)
-    return Path(stripped).stem
+    root = Path(save_path) / TEMP_DIR_NAME
+    if not root.is_dir():
+        return 0
 
-
-def base_output_files(partials) -> list[Path]:
-    """The media files a set of temporary files belongs to.
-
-    A half-written ``Name.mp4`` must go together with the ``Name.mp4.part``
-    or ``Name.temp.mp4`` that shares its stem — the temporary name says
-    which file that is, so nothing is removed when there is no temporary
-    file next to it.
-    """
-    partials = list(partials)
-    partial_paths = set(partials)
-    found = set()
-    for path in partials:
-        stem = _partial_base_stem(path.name)
-        if not stem:
+    removed = 0
+    for entry in root.iterdir():
+        if not entry.is_dir():
             continue
-        escaped = glob_module.escape(stem)
-        for sibling in path.parent.glob(f"{escaped}.*"):
-            if sibling.is_file() and sibling not in partial_paths and not is_partial_name(sibling.name):
-                found.add(sibling)
-    return sorted(found)
+        try:
+            job_id = int(entry.name)
+        except ValueError:
+            continue  # not one of ours
+        if job_id in keep_ids:
+            continue
+        shutil.rmtree(entry, ignore_errors=True)
+        removed += 1
+    return removed
 
 
 def output_stem(title: str) -> str:
@@ -351,21 +358,6 @@ def expected_output_path(save_path: Path, title: str, output_ext: str) -> Path:
     return Path(save_path) / f"{output_stem(title)}.{output_ext}"
 
 
-def partial_files(save_path, title: str) -> list[Path]:
-    """Temporary files yt-dlp left behind for this job's output stem."""
-    folder = Path(save_path)
-    if not folder.is_dir():
-        return []
-
-    stem = output_stem(title)
-    escaped = glob_module.escape(stem)  # literal-match [ ] * ? in the real filename
-    return [
-        candidate
-        for candidate in folder.glob(f"{escaped}.*")
-        if candidate.is_file() and is_partial_name(candidate.name)
-    ]
-
-
 def resolve_output_file(save_path: Path, title: str, output_ext: str):
     """Find the produced file: exact expected name, else any non-partial match."""
     expected = expected_output_path(save_path, title, output_ext)
@@ -379,61 +371,6 @@ def resolve_output_file(save_path: Path, title: str, output_ext: str):
             continue
         return candidate
     return None
-
-
-def remove_partial_files(save_path, title: str, *, include_output: bool = False) -> int:
-    """Delete a job's leftover temporary files; returns how many were removed.
-
-    Paused jobs deliberately keep their partial files so yt-dlp can resume
-    them, so this only runs once a job is really gone (deleted) or has failed
-    for good.
-
-    With ``include_output`` the media file each partial belongs to
-    (``Name.mp4`` beside ``Name.mp4.part`` / ``Name.temp.mp4``) is removed as
-    well. That only happens when a temporary file was actually found, so a
-    finished download is never touched by a cleanup that has nothing to
-    clean (flow.md #27).
-    """
-    from core.logger import logger
-
-    partials = partial_files(save_path, title)
-    targets = list(partials)
-    if include_output:
-        targets += base_output_files(partials)
-
-    removed = 0
-    for path in targets:
-        try:
-            path.unlink()
-            removed += 1
-        except OSError as exc:
-            logger.warning(f"[cleanup] could not remove {path}: {exc}")
-    return removed
-
-
-def sweep_orphaned_partials(root: Path) -> list[Path]:
-    """One-off cleanup: remove every leftover temp/part/ytdl file under root.
-
-    Unlike remove_partial_files (per-job, matched by title stem), this scans
-    the whole download tree regardless of which job owns a file — for
-    clearing out orphans left by older app versions that failed to clean up
-    (e.g. the glob-escaping bug), or files whose job record no longer exists.
-    """
-    from core.logger import logger
-
-    root = Path(root)
-    if not root.is_dir():
-        return []
-
-    removed = []
-    for path in root.rglob("*"):
-        if path.is_file() and is_partial_name(path.name):
-            try:
-                path.unlink()
-                removed.append(path)
-            except OSError as exc:
-                logger.warning(f"[sweep] could not remove {path}: {exc}")
-    return removed
 
 
 # ================= LINK FILE VALIDATION (Add Queue by file) =================
