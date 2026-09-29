@@ -65,14 +65,14 @@ Both launchers install the dependencies automatically if they are missing. Or ru
 
 ## Configuration
 
-`data/config.json` is created next to the app on first run. Most keys are editable from the app's **Settings** dialog:
+`data/config.json` is created next to the app on first run. The **Settings** dialog edits the marked keys:
 
 | Key | In Settings | Description |
 | :--- | :--- | :--- |
 | `max_workers` | yes | How many downloads run in parallel |
 | `download_path` | yes | Default output folder |
-| `default_video_quality` | yes | Pre-selected quality when importing from a file (e.g. `720p`) |
-| `default_audio_bitrate` | yes | Pre-selected MP3 bitrate when importing from a file |
+| `default_video_quality` | yes | Quality pre-selected in the preview and for batch import (e.g. `720p`) |
+| `default_audio_bitrate` | yes | MP3 bitrate pre-selected in the preview and used by **Auto convert to mp3** |
 | `language` | yes | UI language (`vi` / `en`) |
 | `default_audio_bitrates` | no | Bitrates offered in the MP3 group |
 | `request_timeout` | no | Per-request timeout, seconds |
@@ -80,7 +80,9 @@ Both launchers install the dependencies automatically if they are missing. Or ru
 | `cookies_file` | no | Path to a Netscape `cookies.txt` for login/age-gated sites |
 | `cookies_from_browser` | no | Read cookies from an installed browser (e.g. `chrome`, `firefox`) |
 
-Authentication for sites that need it is left to yt-dlp: point `cookies_file` at an exported `cookies.txt`, or let `cookies_from_browser` read them straight from your browser.
+Keys the app no longer knows about are dropped the next time the file is written. Authentication for sites that need it is left to yt-dlp: point `cookies_file` at an exported `cookies.txt`, or let `cookies_from_browser` read them straight from your browser.
+
+The sidebar toggles — **Auto add queue**, **Auto convert to mp3**, **Auto-save on exit**, **Shutdown when done** — and the last save folder are kept in the app's own settings (`QSettings`), next to `config.json`, not in it. The session you were last working in is kept there too, so a restart restores only that session.
 
 Output files are named after the video title (`<title>.mp4` / `<title>.mp3`). Titles longer than the filesystem limit are truncated safely, and spam links embedded in titles are stripped. While a job is running its data stays in `<output>/.temp/<job_id>/` and is moved into the output folder once complete, so partially downloaded files never appear there; scratch folders left by removed jobs are cleaned up on the next launch.
 
@@ -100,7 +102,23 @@ chmod +x build.sh
 ```
 *(If execution is blocked: `Set-ExecutionPolicy -Scope Process Bypass` first)*
 
-Both scripts install the dependencies, package the app with PyInstaller into `dist/VideoDownloadTool/`, and remove temporary files. Tagged pushes (`v*`) build and publish both platforms via `.github/workflows/build.yml`.
+Both scripts install the dependencies, package the app with PyInstaller into `dist/VideoDownloadTool/`, and remove temporary files.
+
+## Release
+
+Releases are published by CI (`.github/workflows/build.yml`). Pushing a version tag (`v*`) builds both platforms, packages them and creates a GitHub Release with the archives attached:
+
+```bash
+git tag v1.0.0
+git push origin v1.0.0
+```
+
+| Asset | Platform | Run |
+| :--- | :--- | :--- |
+| `VideoDownloadTool-linux.zip` | Linux | `VideoDownloadTool` |
+| `VideoDownloadTool-windows.zip` | Windows | `VideoDownloadTool.exe` |
+
+Both are ONEDIR builds: unzip the whole folder and run the executable inside it (`FFmpeg` still has to be installed on the machine). The release notes are generated from the commit history between tags.
 
 ## Disclaimer
 
