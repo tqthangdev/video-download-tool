@@ -318,6 +318,21 @@ def _parse_bitrate(value) -> int:
     return int(digits) if digits else 128
 
 
+def select_audio_format(
+    choices: list[FormatChoice],
+    config: dict | None = None,
+) -> Optional[FormatChoice]:
+    """Pick the MP3 choice (configured bitrate, else the closest), or None.
+
+    Used by "Auto convert to mp3": video formats are ignored, so None means
+    the current URL offers no audio/MP3 output at all.
+    """
+    audios = [c for c in choices if c.type == AUDIO]
+    if not audios:
+        return None
+    return select_default_format(audios, config)
+
+
 def select_default_format(
     choices: list[FormatChoice],
     config: dict | None = None,
@@ -329,16 +344,18 @@ def select_default_format(
       2. closest lower quality, else lowest higher one
       3. highest video
       4. audio
+
+    Audio is only the default when the user asks for it (the "Auto convert to
+    mp3" checkbox, via `select_audio_format`).
     """
     config = config or {}
     if not choices:
         return None
 
-    prefer = str(config.get("prefer", "video")).lower()
     videos = sorted([c for c in choices if c.type == VIDEO], key=lambda c: c.height or 0)
     audios = [c for c in choices if c.type == AUDIO]
 
-    if prefer != "audio" and videos:
+    if videos:
         target = _parse_video_quality(config.get("default_video_quality", 720))
         for choice in videos:
             if choice.height == target:
@@ -357,6 +374,4 @@ def select_default_format(
         lower = [c for c in ordered if (c.bitrate or 0) <= target]
         return lower[-1] if lower else ordered[0]
 
-    if videos:
-        return videos[-1]
     return choices[0]

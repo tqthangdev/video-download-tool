@@ -141,6 +141,11 @@ class RightPanel(QWidget):
             self.queue_list.takeItem(index)
             self._update_queue_label()
 
+    def clear_queue(self):
+        """Empty the visible queue (the jobs themselves stay in the database)."""
+        self.queue_list.clear()
+        self._update_queue_label()
+
     def set_all_status(self, status):
         """Set every non-finished item to the given status."""
         for i in range(self.queue_list.count()):

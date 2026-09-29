@@ -48,8 +48,6 @@ def _combo_options(key: str):
         return [(value, value) for value in VIDEO_QUALITY_OPTIONS]
     if key == "default_audio_bitrate":
         return [(value, value) for value in AUDIO_BITRATE_OPTIONS]
-    if key == "prefer":
-        return [(tr("prefer_video"), "video"), (tr("prefer_audio"), "audio")]
     return None
 
 
@@ -136,6 +134,31 @@ class LeftPanel(QWidget):
         self.input_stack.addWidget(manual_page)  # index 0 = manual
         self.input_stack.addWidget(auto_page)    # index 1 = auto
 
+        # ================= CHECKBOX + SAVE SESSION =================
+        session_row = QWidget()
+        session_layout = QHBoxLayout(session_row)
+        session_layout.setContentsMargins(0, 0, 0, 0)
+        session_layout.setSpacing(6)
+
+        checkbox_session_col = QVBoxLayout()
+        checkbox_session_col.setContentsMargins(0, 0, 0, 0)
+        checkbox_session_col.setSpacing(6)
+
+        self.save_session_cb = make_checkbox(tr("save_session"))
+        self.save_session_cb.setChecked(
+            self.settings.value("save_session", False, type=bool)
+        )
+        self.save_session_cb.toggled.connect(self.on_save_session_toggled)
+
+        checkbox_session_col.addWidget(self.save_session_cb, 0, Qt.AlignmentFlag.AlignLeft)
+
+        self.btn_session = QPushButton(tr("session"))
+        self.btn_session.setFixedWidth(SIDE_BUTTON_WIDTH)
+
+        session_layout.addLayout(checkbox_session_col, 1)
+        session_layout.addWidget(self.btn_session)
+        session_layout.setAlignment(self.btn_session, Qt.AlignmentFlag.AlignTop)
+
         # ================= CHECKBOX + SETTINGS =================
         settings_row = QWidget()
         settings_layout = QHBoxLayout(settings_row)
@@ -152,10 +175,10 @@ class LeftPanel(QWidget):
         )
         self.shutdown_cb.toggled.connect(self.on_shutdown_toggled)
 
-        saved_delay = self.settings.value("shutdown_delay", 60, type=int)
+        saved_delay = self.settings.value("shutdown_delay", 10, type=int)
         self.shutdown_delay = QLineEdit()
-        self.shutdown_delay.setValidator(QIntValidator(1, 3600, self))
-        self.shutdown_delay.setText(str(saved_delay if isinstance(saved_delay, int) else 60))
+        self.shutdown_delay.setValidator(QIntValidator(1, 600, self))
+        self.shutdown_delay.setText(str(saved_delay if isinstance(saved_delay, int) else 10))
         self.shutdown_delay.setFixedSize(38, 22)
         self.shutdown_delay.setStyleSheet(COMPACT_INPUT_STYLE)
         self.shutdown_delay.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -175,6 +198,12 @@ class LeftPanel(QWidget):
         shutdown_row_layout.addWidget(self.shutdown_delay_unit)
         shutdown_row_layout.addStretch()
 
+        self.auto_mp3_cb = make_checkbox(tr("auto_mp3"))
+        self.auto_mp3_cb.setChecked(
+            self.settings.value("auto_mp3", False, type=bool)
+        )
+        self.auto_mp3_cb.toggled.connect(self.on_auto_mp3_toggled)
+
         self.auto_queue_cb = make_checkbox(tr("auto_queue"))
         self.auto_queue_cb.setChecked(
             self.settings.value("auto_queue", False, type=bool)
@@ -182,6 +211,7 @@ class LeftPanel(QWidget):
         self.auto_queue_cb.toggled.connect(self.on_auto_queue_toggled)
 
         checkbox_col.addWidget(shutdown_row, 0, Qt.AlignmentFlag.AlignLeft)
+        checkbox_col.addWidget(self.auto_mp3_cb, 0, Qt.AlignmentFlag.AlignLeft)
         checkbox_col.addWidget(self.auto_queue_cb, 0, Qt.AlignmentFlag.AlignLeft)
 
         self.btn_settings = QPushButton(tr("settings"))
@@ -238,6 +268,7 @@ class LeftPanel(QWidget):
         layout.addWidget(self.mode_area, 0)
         layout.addWidget(self.input_stack, 0)
         layout.addWidget(path_area, 0)
+        layout.addWidget(session_row, 0)
         layout.addWidget(settings_row, 0)
         layout.addWidget(add_row, 0)
         layout.addWidget(self.preview, 1)
@@ -261,6 +292,12 @@ class LeftPanel(QWidget):
 
     def on_auto_queue_toggled(self, checked):
         self.settings.setValue("auto_queue", checked)
+
+    def on_auto_mp3_toggled(self, checked):
+        self.settings.setValue("auto_mp3", checked)
+
+    def on_save_session_toggled(self, checked):
+        self.settings.setValue("save_session", checked)
 
     def on_shutdown_toggled(self, checked):
         self.settings.setValue("shutdown_after_done", checked)
@@ -297,6 +334,9 @@ class LeftPanel(QWidget):
         self.btn_add.setText(tr("add_queue"))
         self.btn_about.setText(tr("about"))
         self.auto_queue_cb.setText(tr("auto_queue"))
+        self.auto_mp3_cb.setText(tr("auto_mp3"))
+        self.save_session_cb.setText(tr("save_session"))
+        self.btn_session.setText(tr("session"))
         self.shutdown_cb.setText(tr("shutdown_after_done"))
         self.shutdown_delay.setToolTip(tr("shutdown_delay_hint"))
         self.shutdown_delay_unit.setText(tr("shutdown_seconds"))
@@ -393,7 +433,6 @@ class _ConfigDialog(QDialog):
         ("field_download_path", "download_path", "field_download_path_desc"),
         ("field_video_quality", "default_video_quality", "field_video_quality_desc"),
         ("field_audio_bitrate", "default_audio_bitrate", "field_audio_bitrate_desc"),
-        ("field_prefer", "prefer", "field_prefer_desc"),
     ]
 
     @staticmethod

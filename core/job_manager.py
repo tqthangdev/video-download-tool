@@ -16,6 +16,30 @@ from core.utils import DATA_DIR
 
 DB_PATH = DATA_DIR / "jobs.db"
 
+# A job belongs to one session: the same URL + format may exist once per
+# session (session_id 0 = not assigned to a session yet).
+JOBS_TABLE_SQL = """
+    CREATE TABLE IF NOT EXISTS jobs (
+        id               INTEGER PRIMARY KEY AUTOINCREMENT,
+        url              TEXT NOT NULL,
+        title            TEXT,
+        save_path        TEXT,
+        status           TEXT DEFAULT 'waiting',
+        selected_format  TEXT,
+        format_key       TEXT,
+        thumbnail        TEXT,
+        extractor        TEXT,
+        output_file      TEXT,
+        downloaded_bytes INTEGER DEFAULT 0,
+        total_bytes      INTEGER,
+        error            TEXT,
+        session_id       INTEGER NOT NULL DEFAULT 0,
+        created_at       TEXT,
+        updated_at       TEXT,
+        UNIQUE(url, format_key, session_id)
+    )
+"""
+
 STATUS_WAITING = "waiting"
 STATUS_RUNNING = "running"
 STATUS_PAUSED = "paused"
@@ -50,6 +74,7 @@ class Job:
     downloaded_bytes: int = 0
     total_bytes: int | None = None
     error: str | None = None
+    session_id: int = 0
     id: int | None = None
     created_at: str | None = None
     updated_at: str | None = None
@@ -75,6 +100,17 @@ class Job:
         return (self.selected_format or {}).get("output_ext") or ""
 
 
+@dataclass
+class Session:
+    """A named snapshot of the queue: a group of jobs kept apart from others."""
+
+    name: str
+    id: int | None = None
+    created_at: str | None = None
+    updated_at: str | None = None
+    job_count: int = 0
+
+
 class JobManager:
 
     def __init__(self, db_path: Path = DB_PATH):
@@ -93,34 +129,24 @@ class JobManager:
 
     def _create_table(self):
         with self._lock:
+            self.conn.execute(JOBS_TABLE_SQL)
             self.conn.execute("""
-                CREATE TABLE IF NOT EXISTS jobs (
-                    id               INTEGER PRIMARY KEY AUTOINCREMENT,
-                    url              TEXT NOT NULL,
-                    title            TEXT,
-                    save_path        TEXT,
-                    status           TEXT DEFAULT 'waiting',
-                    selected_format  TEXT,
-                    format_key       TEXT,
-                    thumbnail        TEXT,
-                    extractor        TEXT,
-                    output_file      TEXT,
-                    downloaded_bytes INTEGER DEFAULT 0,
-                    total_bytes      INTEGER,
-                    error            TEXT,
-                    created_at       TEXT,
-                    updated_at       TEXT,
-                    UNIQUE(url, format_key)
+                CREATE TABLE IF NOT EXISTS sessions (
+                    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                    name       TEXT NOT NULL,
+                    created_at TEXT,
+                    updated_at TEXT
                 )
             """)
             self.conn.commit()
 
     def _migrate(self):
-        """Drop the legacy comic-downloader schema if it is present.
+        """Bring an older database up to the current schema.
 
-        The old table keyed jobs by url and stored chapters/genres; the new
-        architecture keys them by (url, selected format), so the old shape
-        cannot be carried over.
+        1. Drop the legacy comic-downloader shape (keyed by url + chapters).
+        2. Add the session link to databases created before sessions existed.
+        3. Widen the job identity from (url, format) to (url, format, session)
+           so the same URL can live in several sessions as separate jobs.
         """
         with self._lock:
             cols = {row[1] for row in self.conn.execute("PRAGMA table_info(jobs)")}
@@ -129,6 +155,50 @@ class JobManager:
                 self.conn.execute("DROP TABLE jobs")
                 self.conn.commit()
         self._create_table()
+
+        with self._lock:
+            row = self.conn.execute(
+                "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'jobs'"
+            ).fetchone()
+            table_sql = (row["sql"] or "") if row else ""
+
+        with self._lock:
+            cols = {row[1] for row in self.conn.execute("PRAGMA table_info(jobs)")}
+            if "session_id" not in cols:
+                # 0 means "not in a session yet" (assigned when the queue is saved).
+                self.conn.execute(
+                    "ALTER TABLE jobs ADD COLUMN session_id INTEGER NOT NULL DEFAULT 0"
+                )
+                self.conn.commit()
+
+        if "UNIQUE(url, format_key)" in table_sql:
+            self._respread_jobs_by_session()
+        else:
+            with self._lock:
+                self.conn.execute(
+                    "UPDATE jobs SET session_id = 0 WHERE session_id IS NULL"
+                )
+                self.conn.commit()
+
+    def _respread_jobs_by_session(self):
+        """Rebuild the jobs table with the session-aware unique key."""
+        with self._lock:
+            self.conn.execute("ALTER TABLE jobs RENAME TO jobs_old_unique")
+            self.conn.execute(JOBS_TABLE_SQL)
+            self.conn.execute("""
+                INSERT INTO jobs (
+                    id, url, title, save_path, status, selected_format, format_key,
+                    thumbnail, extractor, output_file, downloaded_bytes,
+                    total_bytes, error, session_id, created_at, updated_at
+                )
+                SELECT
+                    id, url, title, save_path, status, selected_format, format_key,
+                    thumbnail, extractor, output_file, downloaded_bytes,
+                    total_bytes, error, COALESCE(session_id, 0), created_at, updated_at
+                FROM jobs_old_unique
+            """)
+            self.conn.execute("DROP TABLE jobs_old_unique")
+            self.conn.commit()
 
     # ------------------------------------------------------------------
     # SERIALIZATION HELPERS
@@ -168,8 +238,19 @@ class JobManager:
             downloaded_bytes=row["downloaded_bytes"] or 0,
             total_bytes=row["total_bytes"],
             error=row["error"],
+            session_id=row["session_id"] or 0,
             created_at=row["created_at"],
             updated_at=row["updated_at"],
+        )
+
+    @staticmethod
+    def _row_to_session(row: sqlite3.Row, job_count: int = 0) -> Session:
+        return Session(
+            id=row["id"],
+            name=row["name"],
+            created_at=row["created_at"],
+            updated_at=row["updated_at"],
+            job_count=job_count,
         )
 
     # ------------------------------------------------------------------
@@ -177,8 +258,8 @@ class JobManager:
     # ------------------------------------------------------------------
 
     def add(self, job: Job) -> Job:
-        """Insert the job, or return the existing row for (url, format)."""
-        existing = self.get(job.url, job.format_key)
+        """Insert the job, or return the existing row for (url, format, session)."""
+        existing = self.get(job.url, job.format_key, job.session_id)
         if existing:
             return existing
 
@@ -189,14 +270,15 @@ class JobManager:
                 INSERT INTO jobs (
                     url, title, save_path, status, selected_format, format_key,
                     thumbnail, extractor, output_file, downloaded_bytes,
-                    total_bytes, error, created_at, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    total_bytes, error, session_id, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     job.url, job.title, str(job.save_path), job.status,
                     self._format_to_json(job.selected_format), job.format_key,
                     job.thumbnail, job.extractor, job.output_file,
-                    job.downloaded_bytes, job.total_bytes, job.error, now, now,
+                    job.downloaded_bytes, job.total_bytes, job.error,
+                    job.session_id, now, now,
                 ),
             )
             self.conn.commit()
@@ -205,11 +287,11 @@ class JobManager:
         job.updated_at = now
         return job
 
-    def get(self, url: str, format_key: str) -> Job | None:
+    def get(self, url: str, format_key: str, session_id: int = 0) -> Job | None:
         with self._lock:
             row = self.conn.execute(
-                "SELECT * FROM jobs WHERE url = ? AND format_key = ?",
-                (url, format_key),
+                "SELECT * FROM jobs WHERE url = ? AND format_key = ? AND session_id = ?",
+                (url, format_key, session_id),
             ).fetchone()
         return self._row_to_job(row) if row else None
 
@@ -225,14 +307,22 @@ class JobManager:
             rows = self.conn.execute("SELECT * FROM jobs ORDER BY id").fetchall()
         return [self._row_to_job(r) for r in rows]
 
-    def get_restorable_jobs(self) -> list[Job]:
+    def get_restorable_jobs(self, session_ids: list[int] | None = None) -> list[Job]:
+        """Incomplete jobs, optionally limited to the given sessions."""
         placeholders = ",".join("?" for _ in RESTORABLE_STATUSES)
+        sql = f"SELECT * FROM jobs WHERE (status IS NULL OR status IN ({placeholders}))"
+        params: list = list(RESTORABLE_STATUSES)
+
+        if session_ids is not None:
+            if not session_ids:
+                return []
+            marks = ",".join("?" for _ in session_ids)
+            sql += f" AND session_id IN ({marks})"
+            params += list(session_ids)
+
+        sql += " ORDER BY id"
         with self._lock:
-            rows = self.conn.execute(
-                f"SELECT * FROM jobs WHERE status IS NULL OR status IN ({placeholders}) "
-                "ORDER BY id",
-                RESTORABLE_STATUSES,
-            ).fetchall()
+            rows = self.conn.execute(sql, params).fetchall()
         return [self._row_to_job(r) for r in rows]
 
     def update_status(self, job_id: int, status: str):
@@ -297,6 +387,95 @@ class JobManager:
                 [(job_id,) for job_id in job_ids],
             )
             self.conn.commit()
+
+    # ------------------------------------------------------------------
+    # SESSIONS
+    #
+    # A session groups jobs so separate workloads (YouTube vs. an anime site)
+    # stay apart. Deleting a session only unlinks its jobs -- the job rows
+    # themselves (and their outputs) are kept.
+    # ------------------------------------------------------------------
+
+    def create_session(self, name: str) -> int:
+        now = _now()
+        with self._lock:
+            cursor = self.conn.execute(
+                "INSERT INTO sessions (name, created_at, updated_at) VALUES (?, ?, ?)",
+                (name, now, now),
+            )
+            self.conn.commit()
+            return cursor.lastrowid
+
+    def get_session(self, session_id: int) -> Session | None:
+        with self._lock:
+            row = self.conn.execute(
+                "SELECT * FROM sessions WHERE id = ?", (session_id,)
+            ).fetchone()
+        return self._row_to_session(row) if row else None
+
+    def all_sessions(self) -> list[Session]:
+        with self._lock:
+            rows = self.conn.execute(
+                """
+                SELECT s.*, COUNT(j.id) AS job_count
+                FROM sessions s
+                LEFT JOIN jobs j ON j.session_id = s.id
+                GROUP BY s.id
+                ORDER BY s.id DESC
+                """
+            ).fetchall()
+        return [self._row_to_session(r, r["job_count"]) for r in rows]
+
+    def rename_session(self, session_id: int, name: str):
+        with self._lock:
+            self.conn.execute(
+                "UPDATE sessions SET name = ?, updated_at = ? WHERE id = ?",
+                (name, _now(), session_id),
+            )
+            self.conn.commit()
+
+    def delete_session(self, session_id: int):
+        """Drop the session but keep its jobs (they are only unlinked)."""
+        with self._lock:
+            self.conn.execute(
+                "UPDATE jobs SET session_id = 0 WHERE session_id = ?",
+                (session_id,),
+            )
+            self.conn.execute("DELETE FROM sessions WHERE id = ?", (session_id,))
+            self.conn.commit()
+
+    def session_jobs(self, session_id: int) -> list[Job]:
+        with self._lock:
+            rows = self.conn.execute(
+                "SELECT * FROM jobs WHERE session_id = ? ORDER BY id",
+                (session_id,),
+            ).fetchall()
+        return [self._row_to_job(r) for r in rows]
+
+    def has_unassigned_jobs(self) -> bool:
+        with self._lock:
+            row = self.conn.execute(
+                "SELECT 1 FROM jobs WHERE session_id = 0 LIMIT 1"
+            ).fetchone()
+        return row is not None
+
+    def assign_unassigned_jobs(self, session_id: int) -> int:
+        """Move every job that does not belong to a session into this one.
+
+        Jobs already owned by another session are left alone, so saving a new
+        session never steals items from an existing one.
+        """
+        with self._lock:
+            cursor = self.conn.execute(
+                "UPDATE jobs SET session_id = ?, updated_at = ? WHERE session_id = 0",
+                (session_id, _now()),
+            )
+            self.conn.execute(
+                "UPDATE sessions SET updated_at = ? WHERE id = ?",
+                (_now(), session_id),
+            )
+            self.conn.commit()
+            return cursor.rowcount
 
     # ------------------------------------------------------------------
     # ASYNC WRAPPERS - used in the hot path so DB writes do not block the

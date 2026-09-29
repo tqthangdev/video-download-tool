@@ -7,8 +7,9 @@ The GUI is PyQt6; yt-dlp does the extraction and downloading. The application it
 ## Features
 
 - **Preview before download** — title, thumbnail, duration and every available format for the URL.
-- **Format picker** — MP4 qualities (e.g. `360p … 1080p`) and MP3 bitrates, as radio buttons. The actual yt-dlp format id is kept internally; the label is only presentation.
-- **Queue with a SQLite job store** — a job is one URL + one selected format, so the same video can be queued at several qualities. Jobs survive restarts and are restored on the next launch.
+- **Format picker** — MP4 qualities (e.g. `360p … 1080p`) and MP3 bitrates, as radio buttons. The actual yt-dlp format id is kept internally; the label is only presentation. Turn on **Auto convert to mp3** to send every pasted or imported link straight to MP3, and **Auto add queue** to queue each pasted link automatically.
+- **Queue with a SQLite job store** — a job is one URL + one selected format inside a session, so the same video can be queued at several qualities (and the same link can live in more than one session). Jobs survive restarts; on launch the app asks whether to restore the previous session.
+- **Saved sessions** — snapshot the current queue as a named session and restore it later, so separate workloads (e.g. YouTube and an anime site) don't mix. In the **Session** dialog you can **New** (clear the queue and start a fresh session), **Save current session**, rename, remove or restore sessions; removing one keeps its items in the database. Turn on **Auto-save on exit** to save the current session automatically when the app closes.
 - **Pause / resume / delete**, per-job progress (percent, downloaded size, speed, ETA) and clear-done. Interrupted downloads keep their partial data and continue where they left off.
 - **Clean output folder** — a job downloads into a hidden `.temp/<job_id>/` folder inside the output directory and only the finished file is moved out, so the folder never shows half-written files.
 - **Batch import** — load a list of URLs from a `.txt` file; the default quality/bitrate from the settings is applied to each.
@@ -72,7 +73,6 @@ Both launchers install the dependencies automatically if they are missing. Or ru
 | `download_path` | yes | Default output folder |
 | `default_video_quality` | yes | Pre-selected quality when importing from a file (e.g. `720p`) |
 | `default_audio_bitrate` | yes | Pre-selected MP3 bitrate when importing from a file |
-| `prefer` | yes | Which kind of format is pre-selected (`video` or `audio`) |
 | `language` | yes | UI language (`vi` / `en`) |
 | `default_audio_bitrates` | no | Bitrates offered in the MP3 group |
 | `request_timeout` | no | Per-request timeout, seconds |

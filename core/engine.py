@@ -60,9 +60,10 @@ class Engine(QObject):
         """Add a job to the queue, resolving against the DB record.
 
         Returns one of: queued, resume, already_queued, already_running,
-        already_downloaded.
+        already_downloaded. A duplicate is only a duplicate within the same
+        session; the same URL in another session is a separate job.
         """
-        existing = self.db.get(job.url, job.format_key)
+        existing = self.db.get(job.url, job.format_key, job.session_id)
 
         if existing:
             job.id = existing.id
@@ -74,7 +75,10 @@ class Engine(QObject):
 
             if status == STATUS_RUNNING:
                 return "already_running"
-            if status == STATUS_WAITING:
+            # A DB status of "waiting" is not enough: the queue may have been
+            # cleared (switching sessions) while the row kept that status, so
+            # check the live queue before reporting a duplicate.
+            if status == STATUS_WAITING and self._is_queued(job.key):
                 return "already_queued"
 
             if status == STATUS_DONE:
@@ -92,21 +96,25 @@ class Engine(QObject):
         await self.queue.put(job)
         return "queued"
 
-    async def del_job(self, key: str) -> bool:
-        """Remove a job entirely: queue, active download, DB record, temp files."""
-        existing = None
-        for job in self.db.all_jobs():
-            if job.key == key:
-                existing = job
-                break
+    def _is_queued(self, key: str) -> bool:
+        """True when the job is waiting in the queue or downloading right now."""
+        if key in self.active_jobs:
+            return True
+        return any(job.key == key for job in self.queue._queue)
 
+    async def del_job(self, key: str) -> bool:
+        """Remove a job entirely: queue, active download, DB record, temp files.
+
+        The same URL + format may exist in another session, so the job that is
+        actually queued/downloading (or in the DB) is the one removed.
+        """
         # Drop it from the queue if it is only waiting.
         was_queued = False
         queued_job = None
         pending = []
         while not self.queue.empty():
             queued = self.queue.get_nowait()
-            if queued.key == key:
+            if not was_queued and queued.key == key:
                 was_queued = True
                 queued_job = queued
                 continue
@@ -114,24 +122,30 @@ class Engine(QObject):
         for queued in pending:
             self.queue.put_nowait(queued)
 
-        was_running = key in self.active_jobs
+        active_job = self.active_jobs.get(key)
+        was_running = active_job is not None
         if was_running:
             self.deleted_keys.add(key)
             self.active_jobs.pop(key, None)
 
-        if existing:
-            await self.db.adelete(existing.id)
+        target = queued_job or active_job
+        if target is None:
+            for job in self.db.all_jobs():
+                if job.key == key:
+                    target = job
+                    break
+
+        if target is not None and target.id is not None:
+            await self.db.adelete(target.id)
 
         # A running download still has its scratch folder open (yt-dlp keeps
         # writing until the cancel flag is seen), so the worker removes it once
         # the download has actually stopped. Idle jobs have no writer, so their
         # scratch folder can go right away (flow.md #27).
-        if not was_running:
-            job = queued_job or existing
-            if job is not None:
-                remove_job_temp_dir(job.save_path, job.id)
+        if not was_running and target is not None:
+            remove_job_temp_dir(target.save_path, target.id)
 
-        return bool(existing or was_queued or was_running)
+        return target is not None or was_queued or was_running
 
     # ------------------------------------------------------------------
     # RUN / STOP
@@ -305,10 +319,16 @@ class Engine(QObject):
         if removed:
             logger.info(f"Removed {removed} orphaned download temp folder(s)")
 
-    async def restore_session(self, base_path: str | None = None):
-        """Restore incomplete jobs from the previous session (flow.md #31)."""
+    async def restore_session(self, base_path: str | None = None, session_id: int | None = None):
+        """Restore incomplete jobs from the previous session (flow.md #31).
+
+        Only the session that was active when the app closed -- plus items
+        that were never saved into a session -- comes back, so different
+        sessions are not mixed together on launch.
+        """
         self._remove_dead_temp_dirs(base_path)
-        jobs = self.db.get_restorable_jobs()
+        session_ids = [0] if not session_id else [0, session_id]
+        jobs = self.db.get_restorable_jobs(session_ids)
         total = len(jobs)
 
         for current, job in enumerate(jobs, start=1):
@@ -343,3 +363,97 @@ class Engine(QObject):
 
         for job in pending:
             self.queue.put_nowait(job)
+
+    # ------------------------------------------------------------------
+    # SAVED SESSIONS
+    #
+    # A session is a named snapshot of the queue, so separate workloads
+    # (e.g. YouTube vs. an anime site) can be kept apart and brought back
+    # one at a time (feedback.md).
+    # ------------------------------------------------------------------
+
+    def sessions(self):
+        return self.db.all_sessions()
+
+    def create_session(self, name: str) -> int:
+        """Open a fresh, empty session (filled when the new queue is saved)."""
+        return self.db.create_session(name)
+
+    def clear_pending(self):
+        """Drop the jobs still waiting in the queue.
+
+        The jobs themselves stay in the database; only the in-memory queue is
+        emptied, so switching to a new session does not carry the old one over.
+        """
+        while not self.queue.empty():
+            try:
+                self.queue.get_nowait()
+            except asyncio.QueueEmpty:
+                break
+
+    def save_session(self, name: str, session_id: int | None = None) -> int | None:
+        """Snapshot the current queue into a session.
+
+        Only jobs that do not already belong to a session are captured, so
+        saving a new session never pulls items out of an existing one. When an
+        existing `session_id` is given it is refreshed instead of creating a
+        second one. Returns the session id, or None when there was nothing new
+        to save.
+        """
+        if session_id is not None and self.db.get_session(session_id):
+            self.db.assign_unassigned_jobs(session_id)
+            return session_id
+
+        if not self.db.has_unassigned_jobs():
+            return None
+
+        new_id = self.db.create_session(name)
+        self.db.assign_unassigned_jobs(new_id)
+        return new_id
+
+    def rename_session(self, session_id: int, name: str):
+        self.db.rename_session(session_id, name)
+
+    def delete_session(self, session_id: int):
+        """Remove a session; its jobs stay in the database (only unlinked)."""
+        self.db.delete_session(session_id)
+
+    async def restore_saved_session(
+        self, session_id: int, base_path: str | None = None
+    ) -> list[Job]:
+        """Put a saved session's jobs back into the queue as waiting.
+
+        This switches the queue over to the session: jobs still waiting from
+        the previous view are dropped from the queue (they stay in the
+        database), so restoring never mixes two sessions together.
+        """
+        jobs = self.db.session_jobs(session_id)
+        if not jobs:
+            return []
+
+        # Drain the pending queue so it can be rebuilt for this session.
+        self.clear_pending()
+
+        # Jobs already downloading must not be queued again.
+        busy = set(self.active_jobs)
+        pending: list[Job] = []
+
+        restored: list[Job] = []
+        for job in jobs:
+            if base_path:
+                new_path = Path(base_path)
+                if job.save_path != new_path:
+                    job.save_path = new_path
+                    self.db.update_save_path(job.id, new_path)
+
+            if job.key not in busy:
+                self.db.update_status(job.id, STATUS_WAITING)
+                job.status = STATUS_WAITING
+                pending.append(job)
+
+            restored.append(job)
+
+        for job in pending:
+            self.queue.put_nowait(job)
+
+        return restored

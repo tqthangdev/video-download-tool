@@ -3,6 +3,7 @@ import os
 import platform
 import subprocess
 import sys
+from datetime import datetime
 from pathlib import Path
 
 from qasync import asyncSlot
@@ -14,12 +15,13 @@ from PyQt6.QtCore import QSettings, QTimer, Qt, QEvent
 from gui.ui_left import LeftPanel
 from gui.ui_right import RightPanel
 from gui.restore_dialog import RestoreDialog
+from gui.session_dialog import SessionDialog
 from gui.cursor_utils import apply_pointer_cursors
 from gui.theme import MAIN_WINDOW_STYLE
 from gui.video_preview import fetch_thumbnail_bytes
 from core.logger import logger
 from core.i18n import tr, add_listener, set_lang
-from core.format_selector import build_choices, select_default_format
+from core.format_selector import build_choices, select_audio_format, select_default_format
 from core.job_manager import Job
 from core.errors import ApplicationError
 
@@ -55,6 +57,9 @@ class MainWindow(QWidget):
         self._closing = False
         self._shutdown_cancelled = False
         self._shutdown_seconds_left = 0
+        # The session the user was last working in, so a restart restores only
+        # that one (plus unsaved items) instead of every session at once.
+        self._session_saved_id = self._current_session_id()
 
         self.init_ui()
         self._update_buttons()
@@ -74,6 +79,8 @@ class MainWindow(QWidget):
 
         self.left.btn_paste.clicked.connect(self.on_paste_url)
         self.left.btn_add.clicked.connect(self.add_queue)
+        self.left.btn_session.clicked.connect(self.open_sessions)
+        self.left.auto_mp3_cb.toggled.connect(self._on_auto_mp3_toggled)
 
         self.right.btn_start.clicked.connect(self.start_engine)
         self.right.btn_resume.clicked.connect(self.toggle_resume_engine)
@@ -89,6 +96,24 @@ class MainWindow(QWidget):
         QTimer.singleShot(100, self._start_restore)
 
     def _start_restore(self):
+        # Ask first: only run restore_session when the user wants the previous
+        # session back (feedback.md #4). Nothing to ask when there is nothing
+        # to restore.
+        if not self.engine.db.get_restorable_jobs(self._restorable_session_ids()):
+            return
+
+        box = QMessageBox(self)
+        box.setWindowTitle(tr("session_restore_confirm_title"))
+        box.setText(tr("session_restore_confirm_text"))
+        box.setIcon(QMessageBox.Icon.Question)
+        btn_yes = box.addButton(tr("yes"), QMessageBox.ButtonRole.YesRole)
+        btn_no = box.addButton(tr("no"), QMessageBox.ButtonRole.NoRole)
+        box.setDefaultButton(btn_yes)
+        box.exec()
+
+        if box.clickedButton() is not btn_yes:
+            return
+
         self.restore_modal = RestoreDialog(self)
         self.restore_modal.show()
         QTimer.singleShot(0, self._run_restore)
@@ -188,20 +213,44 @@ class MainWindow(QWidget):
             ffmpeg_available=self.engine.ffmpeg_available(),
             source_url=info.source_url,
         )
-        default = select_default_format(choices, self.engine.config)
+        self._choices = choices
+        self._video_info = info
+        default = self._preview_default_choice()
 
         thumbnail = None
         if info.thumbnail:
             thumbnail = await loop.run_in_executor(None, fetch_thumbnail_bytes, info.thumbnail)
 
-        self._video_info = info
-        self._choices = choices
         self.left.preview.set_video(info, choices, default=default, thumbnail=thumbnail)
         self.left.on_loading(False)
         self.left._update_add_button()
 
         if not choices:
             self._show_message(tr("notify"), tr("no_formats"))
+
+    def _preview_default_choice(self):
+        """Default radio selection, honouring "Auto convert to mp3"."""
+        if self.left.auto_mp3_cb.isChecked():
+            mp3 = select_audio_format(self._choices, self.engine.config)
+            if mp3 is not None:
+                return mp3
+        return select_default_format(self._choices, self.engine.config)
+
+    def _add_choice(self):
+        """Format used when adding: MP3 when auto-convert is on, else the radio."""
+        if self.left.auto_mp3_cb.isChecked():
+            mp3 = select_audio_format(self._choices, self.engine.config)
+            if mp3 is not None:
+                return mp3
+        return self.left.preview.selected_choice()
+
+    def _on_auto_mp3_toggled(self, checked):
+        # Keep the preview's radio selection in step with the checkbox.
+        if not self._choices:
+            return
+        choice = self._preview_default_choice()
+        if choice is not None:
+            self.left.preview.select_choice(choice)
 
     # =========================
     # ADD QUEUE
@@ -214,7 +263,7 @@ class MainWindow(QWidget):
 
         url = self.left.url_input.text().strip()
         base_path = self.left.path_input.text().strip()
-        choice = self.left.preview.selected_choice()
+        choice = self._add_choice()
 
         if not url or not self._video_info or choice is None or not base_path:
             return
@@ -228,6 +277,7 @@ class MainWindow(QWidget):
                 selected_format=choice.to_dict(),
                 thumbnail=self._video_info.thumbnail,
                 extractor=self._video_info.extractor,
+                session_id=self._session_saved_id or 0,
             )
 
             result = await self.engine.add_job(job)
@@ -283,6 +333,7 @@ class MainWindow(QWidget):
         semaphore = asyncio.Semaphore(self.engine.max_workers)
         db_lock = asyncio.Lock()
         ffmpeg = self.engine.ffmpeg_available()
+        auto_mp3 = self.left.auto_mp3_cb.isChecked()
         state = {"completed": 0, "added": 0}
 
         async def process(url):
@@ -299,6 +350,8 @@ class MainWindow(QWidget):
                     source_url=info.source_url,
                 )
                 choice = select_default_format(choices, self.engine.config)
+                if auto_mp3:
+                    choice = select_audio_format(choices, self.engine.config) or choice
                 if choice is not None:
                     job = Job(
                         url=url,
@@ -307,6 +360,7 @@ class MainWindow(QWidget):
                         selected_format=choice.to_dict(),
                         thumbnail=info.thumbnail,
                         extractor=info.extractor,
+                        session_id=self._session_saved_id or 0,
                     )
                     async with db_lock:
                         result = await self.engine.add_job(job)
@@ -333,7 +387,11 @@ class MainWindow(QWidget):
     # NON-MODAL MESSAGE BOX
     # =========================
     def _show_message(self, title, text, critical=False):
-        box = QMessageBox(self)
+        # While a modal dialog is open (e.g. the sessions manager), a box
+        # parented to the main window would be hidden behind it, so attach to
+        # the modal instead.
+        parent = QApplication.activeModalWidget() or self
+        box = QMessageBox(parent)
         box.setWindowTitle(title)
         box.setText(text)
         box.setIcon(QMessageBox.Icon.Critical if critical else QMessageBox.Icon.Information)
@@ -371,6 +429,12 @@ class MainWindow(QWidget):
     # =========================
     # SESSION RESTORE
     # =========================
+    def _restorable_session_ids(self) -> list[int]:
+        """Sessions to bring back on launch: the current one + unsaved items."""
+        if self._session_saved_id:
+            return [0, self._session_saved_id]
+        return [0]
+
     @asyncSlot()
     async def _restore_session(self):
         base_path = self.left.path_input.text().strip()
@@ -378,7 +442,9 @@ class MainWindow(QWidget):
         queue = self.right.queue_list
         queue.setUpdatesEnabled(False)
         try:
-            async for current, total, job in self.engine.restore_session(base_path):
+            async for current, total, job in self.engine.restore_session(
+                base_path, self._session_saved_id
+            ):
                 self.right.update_queue_item(job, "Waiting")
                 if getattr(self, "restore_modal", None):
                     self.restore_modal.set_progress(current, total)
@@ -391,8 +457,97 @@ class MainWindow(QWidget):
         self._update_buttons()
 
     # =========================
-    # ENGINE CONTROL
+    # SAVED SESSIONS
     # =========================
+    def open_sessions(self):
+        dialog = SessionDialog(self.engine, self)
+        dialog.restoreRequested.connect(self._on_session_restore)
+        dialog.saveRequested.connect(self._on_session_save)
+        dialog.newRequested.connect(self._on_session_new)
+        dialog.exec()
+        self._update_buttons()
+
+    def _default_session_name(self) -> str:
+        now = datetime.now()
+        return (
+            f"Session_{now:%d-%m-%Y}_{now:%H-%M-%S}-{now.microsecond // 1000:03d}"
+        )
+
+    def _current_session_id(self) -> int | None:
+        """The persisted current session, if it still exists."""
+        session_id = self.settings.value("current_session_id", 0, type=int) or 0
+        if session_id and not self.engine.db.get_session(session_id):
+            session_id = 0
+        return session_id or None
+
+    def _set_current_session(self, session_id: int | None):
+        self._session_saved_id = session_id
+        self.settings.setValue("current_session_id", session_id or 0)
+
+    def _save_current_session(self) -> bool:
+        """Snapshot the current queue; True when a session now holds it."""
+        try:
+            session_id = self.engine.save_session(
+                name=self._default_session_name(),
+                session_id=self._session_saved_id,
+            )
+        except Exception:
+            logger.exception("Failed to save the current session")
+            return False
+
+        if session_id is None:
+            return False
+
+        self._set_current_session(session_id)
+        return True
+
+    def _on_session_save(self):
+        if self._save_current_session():
+            self._show_message(tr("notify"), tr("session_saved"))
+        else:
+            self._show_message(tr("notify"), tr("session_saved_nothing"))
+
+    def _on_session_new(self):
+        """Start a fresh session: keep the current batch, clear the queue.
+
+        The current items are saved into their session first (so the next
+        batch cannot be folded into them), then the queue is emptied and a new
+        empty session is opened.
+        """
+        if self.right.queue_list.count() > 0:
+            self._save_current_session()
+
+        self.right.clear_queue()
+        self.engine.clear_pending()
+
+        try:
+            self._set_current_session(
+                self.engine.create_session(self._default_session_name())
+            )
+        except Exception:
+            logger.exception("Failed to start a new session")
+            self._set_current_session(None)
+
+    @asyncSlot(int)
+    async def _on_session_restore(self, session_id):
+        base_path = self.left.path_input.text().strip()
+        # Restoring switches the queue over to this session, so clear what is
+        # shown first (the jobs stay in the database).
+        self.right.clear_queue()
+        try:
+            jobs = await self.engine.restore_saved_session(session_id, base_path)
+        except Exception:
+            logger.exception(f"Failed to restore session {session_id}")
+            self._show_message(tr("error"), tr("session_restore_failed"), critical=True)
+            return
+
+        for job in jobs:
+            self.right.update_queue_item(job, "Waiting")
+        # New items now belong to the restored session.
+        self._set_current_session(session_id or None)
+        self._update_buttons()
+        self._show_message(tr("notify"), tr("session_restored").format(count=len(jobs)))
+
     @asyncSlot()
     async def start_engine(self):
         if self.engine.running:
@@ -541,6 +696,15 @@ class MainWindow(QWidget):
             event.accept()
             return
 
+        # With items in the queue, offer to save the current session before
+        # exiting (feedback.md #5). When auto-save is on this happens without
+        # asking.
+        if self.right.queue_list.count() > 0:
+            if self.left.save_session_cb.isChecked():
+                self._save_current_session()
+            elif self._ask_save_session():
+                self._save_current_session()
+
         msg = tr("close_confirm_running") if self.engine.running else tr("close_confirm_idle")
 
         box = QMessageBox(self)
@@ -559,6 +723,18 @@ class MainWindow(QWidget):
 
         event.ignore()
         asyncio.ensure_future(self._shutdown())
+
+    def _ask_save_session(self) -> bool:
+        box = QMessageBox(self)
+        box.setWindowTitle(tr("session_unsaved_title"))
+        box.setText(tr("session_unsaved_text"))
+        box.setIcon(QMessageBox.Icon.Question)
+
+        btn_save = box.addButton(tr("session_save"), QMessageBox.ButtonRole.AcceptRole)
+        box.addButton(tr("cancel"), QMessageBox.ButtonRole.RejectRole)
+        box.setDefaultButton(btn_save)
+        box.exec()
+        return box.clickedButton() is btn_save
 
     async def _shutdown(self):
         try:

@@ -85,7 +85,6 @@ DEFAULT_CONFIG = {
     "default_video_quality": "720p",
     "default_audio_bitrate": "128k",
     "default_audio_bitrates": [128, 192, 320],
-    "prefer": "video",
     "shutdown_after_complete": False,
     "shutdown_delay": 30,
     "language": "en",
@@ -123,12 +122,13 @@ def load_config() -> dict:
                 {
                     k: v
                     for k, v in user_config.items()
-                    if v not in (None, "")
+                    if k in DEFAULT_CONFIG and v not in (None, "")
                 }
             )
 
-            # Add newly introduced default fields
-            if set(DEFAULT_CONFIG) - set(user_config):
+            # Add newly introduced default fields and drop keys the app no
+            # longer knows about (e.g. an option removed after a refactor).
+            if set(DEFAULT_CONFIG) != set(user_config):
                 try:
                     with open(config_path, "w", encoding="utf-8") as f:
                         json.dump(
@@ -178,7 +178,7 @@ def load_config() -> dict:
                     {
                         k: v
                         for k, v in bundled_config.items()
-                        if v not in (None, "")
+                        if k in DEFAULT_CONFIG and v not in (None, "")
                     }
                 )
 
