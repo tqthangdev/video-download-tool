@@ -106,19 +106,7 @@ Both scripts install the dependencies, package the app with PyInstaller into `di
 
 ## Release
 
-Releases are published by CI (`.github/workflows/build.yml`). Pushing a version tag (`v*`) builds both platforms, packages them and creates a GitHub Release with the archives attached:
-
-```bash
-git tag v1.0.0
-git push origin v1.0.0
-```
-
-| Asset | Platform | Run |
-| :--- | :--- | :--- |
-| `VideoDownloadTool-linux.zip` | Linux | `VideoDownloadTool` |
-| `VideoDownloadTool-windows.zip` | Windows | `VideoDownloadTool.exe` |
-
-Both are ONEDIR builds: unzip the whole folder and run the executable inside it (`FFmpeg` still has to be installed on the machine). The release notes are generated from the commit history between tags.
+Prebuilt standalone builds (Windows / Linux) are published on [GitHub Releases](https://github.com/tqthangdev/video-download-tool/releases) — no Python installation required. Pushing a `v*` tag triggers the CI build.
 
 ## Disclaimer
 
