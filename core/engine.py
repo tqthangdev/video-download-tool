@@ -6,6 +6,7 @@ default thread pool so the Qt event loop stays responsive (flow.md #53).
 """
 
 import asyncio
+import sqlite3
 from pathlib import Path
 
 from PyQt6.QtCore import QObject, pyqtSignal
@@ -13,6 +14,7 @@ from PyQt6.QtCore import QObject, pyqtSignal
 from core.downloader import Downloader
 from core.errors import CANCELLED
 from core.job_manager import (
+    RESTORABLE_STATUSES,
     STATUS_DONE,
     STATUS_FAILED,
     STATUS_PAUSED,
@@ -22,7 +24,13 @@ from core.job_manager import (
     JobManager,
 )
 from core.logger import logger
-from core.utils import CONFIG, cleanup_orphan_temp_dirs, remove_job_temp_dir
+from core.sessions import SessionStore, delete_session_files, session_db_path
+from core.utils import (
+    CONFIG,
+    cleanup_orphan_temp_dirs,
+    remove_job_temp_dir,
+    remove_session_temp_dirs,
+)
 from core.ytdlp import YtdlpClient, ffmpeg_available
 
 
@@ -33,11 +41,19 @@ class Engine(QObject):
     # worker crashed) so the UI can resync its buttons without a manual pause.
     finished = pyqtSignal()
 
-    def __init__(self, max_workers=3, config: dict | None = None):
+    def __init__(self, max_workers=3, config: dict | None = None, session_id: str | None = None):
         super().__init__()
         self.config = config or CONFIG
         self.max_workers = max(1, int(max_workers))
-        self.db = JobManager()
+
+        # Each session is its own database file; open the current one.
+        self.session_store = SessionStore()
+        if session_id and self.session_store.get(session_id):
+            self.session_store.set_current(session_id)
+        session = self.session_store.ensure_current()
+        self.session_id = session.id
+        self.db = JobManager(session_db_path(session.id))
+
         self.client = YtdlpClient(self.config)
         self.downloader = Downloader(self.client)
 
@@ -57,13 +73,14 @@ class Engine(QObject):
     # ------------------------------------------------------------------
 
     async def add_job(self, job: Job) -> str:
-        """Add a job to the queue, resolving against the DB record.
+        """Add a job to the current session's queue, resolving against the DB.
 
         Returns one of: queued, resume, already_queued, already_running,
-        already_downloaded. A duplicate is only a duplicate within the same
-        session; the same URL in another session is a separate job.
+        already_downloaded. A duplicate is a duplicate within this session only;
+        the same URL in another session is a separate job.
         """
-        existing = self.db.get(job.url, job.format_key, job.session_id)
+        job.session_id = self.session_id
+        existing = self.db.get(job.url, job.format_key)
 
         if existing:
             job.id = existing.id
@@ -135,6 +152,9 @@ class Engine(QObject):
                     target = job
                     break
 
+        if target is not None:
+            target.session_id = target.session_id or self.session_id
+
         if target is not None and target.id is not None:
             await self.db.adelete(target.id)
 
@@ -143,7 +163,7 @@ class Engine(QObject):
         # the download has actually stopped. Idle jobs have no writer, so their
         # scratch folder can go right away (flow.md #27).
         if not was_running and target is not None:
-            remove_job_temp_dir(target.save_path, target.id)
+            remove_job_temp_dir(target.save_path, target.session_id, target.id)
 
         return target is not None or was_queued or was_running
 
@@ -233,13 +253,13 @@ class Engine(QObject):
                     # yt-dlp has stopped by now, so its scratch folder is no
                     # longer being written and can be removed safely (flow.md #27).
                     if job.key not in self.active_jobs:
-                        remove_job_temp_dir(job.save_path, job.id)
+                        remove_job_temp_dir(job.save_path, job.session_id, job.id)
                 elif result.ok:
                     await self.db.aupdate_output(job.id, result.output_file)
                     await self.db.aupdate_status(job.id, STATUS_DONE)
                     # The output was moved out of the scratch folder already;
                     # this clears whatever a resumed run left behind.
-                    remove_job_temp_dir(job.save_path, job.id)
+                    remove_job_temp_dir(job.save_path, job.session_id, job.id)
                     self.progress.emit(job.key, "Done")
                     logger.info(f"DONE: {job.title} -> {result.output_file}")
                 elif result.error is not None and result.error.code == CANCELLED:
@@ -251,7 +271,7 @@ class Engine(QObject):
                     await self.db.aupdate_status(job.id, STATUS_FAILED)
                     # Failed is terminal: nothing will resume this job, so its
                     # scratch folder must not be left on disk (flow.md #27).
-                    remove_job_temp_dir(job.save_path, job.id)
+                    remove_job_temp_dir(job.save_path, job.session_id, job.id)
                     self.progress.emit(job.key, "Failed")
                     logger.warning(f"[{job.title}] Failed: {message}")
 
@@ -304,14 +324,32 @@ class Engine(QObject):
 
         Scratch folders of restorable jobs are kept so yt-dlp can resume the
         partial download it left there (flow.md #29); the rest are dead weight.
+        Every session is scanned, because a folder's owning session is not
+        necessarily the one currently open.
         """
-        keep_ids = {job.id for job in self.db.get_restorable_jobs()}
-        paths = {job.save_path for job in self.db.all_jobs()}
+        keep: set[tuple[str, int]] = set()
+        paths: set[Path] = set()
+        for info in self.session_store.list():
+            db = (
+                self.db
+                if info.id == self.session_id
+                else JobManager(session_db_path(info.id))
+            )
+            try:
+                for job in db.get_restorable_jobs():
+                    keep.add((info.id, job.id))
+                for job in db.all_jobs():
+                    paths.add(job.save_path)
+            except sqlite3.Error as exc:
+                logger.warning(f"Could not scan session {info.id} for temp cleanup: {exc}")
+            finally:
+                if db is not self.db:
+                    db.close()
         if base_path:
             paths.add(Path(base_path))
 
         try:
-            removed = sum(cleanup_orphan_temp_dirs(p, keep_ids) for p in paths)
+            removed = sum(cleanup_orphan_temp_dirs(p, keep) for p in paths)
         except OSError as exc:
             logger.warning(f"Could not clean up download temp folders: {exc}")
             return
@@ -319,19 +357,14 @@ class Engine(QObject):
         if removed:
             logger.info(f"Removed {removed} orphaned download temp folder(s)")
 
-    async def restore_session(self, base_path: str | None = None, session_id: int | None = None):
-        """Restore incomplete jobs from the previous session (flow.md #31).
-
-        Only the session that was active when the app closed -- plus items
-        that were never saved into a session -- comes back, so different
-        sessions are not mixed together on launch.
-        """
+    async def restore_session(self, base_path: str | None = None):
+        """Restore the current session's incomplete jobs (flow.md #31)."""
         self._remove_dead_temp_dirs(base_path)
-        session_ids = [0] if not session_id else [0, session_id]
-        jobs = self.db.get_restorable_jobs(session_ids)
+        jobs = self.db.get_restorable_jobs()
         total = len(jobs)
 
         for current, job in enumerate(jobs, start=1):
+            job.session_id = self.session_id
             if base_path:
                 new_path = Path(base_path)
                 if job.save_path != new_path:
@@ -365,19 +398,11 @@ class Engine(QObject):
             self.queue.put_nowait(job)
 
     # ------------------------------------------------------------------
-    # SAVED SESSIONS
+    # SESSIONS
     #
-    # A session is a named snapshot of the queue, so separate workloads
-    # (e.g. YouTube vs. an anime site) can be kept apart and brought back
-    # one at a time (feedback.md).
+    # Each session is a self-contained queue in its own database file
+    # (core/sessions.py). Switching opens that file; deleting removes it.
     # ------------------------------------------------------------------
-
-    def sessions(self):
-        return self.db.all_sessions()
-
-    def create_session(self, name: str) -> int:
-        """Open a fresh, empty session (filled when the new queue is saved)."""
-        return self.db.create_session(name)
 
     def clear_pending(self):
         """Drop the jobs still waiting in the queue.
@@ -391,69 +416,109 @@ class Engine(QObject):
             except asyncio.QueueEmpty:
                 break
 
-    def save_session(self, name: str, session_id: int | None = None) -> int | None:
-        """Snapshot the current queue into a session.
+    def list_sessions(self):
+        return self.session_store.list()
 
-        Only jobs that do not already belong to a session are captured, so
-        saving a new session never pulls items out of an existing one. When an
-        existing `session_id` is given it is refreshed instead of creating a
-        second one. Returns the session id, or None when there was nothing new
-        to save.
-        """
-        if session_id is not None and self.db.get_session(session_id):
-            self.db.assign_unassigned_jobs(session_id)
-            return session_id
+    def current_session(self):
+        return self.session_store.get(self.session_id)
 
-        if not self.db.has_unassigned_jobs():
-            return None
+    def job_count(self, session_id) -> int:
+        """Number of jobs stored in a session (shown in the sessions dialog)."""
+        if session_id == self.session_id:
+            return self.db.count_jobs()
+        db = JobManager(session_db_path(session_id))
+        try:
+            return db.count_jobs()
+        finally:
+            db.close()
 
-        new_id = self.db.create_session(name)
-        self.db.assign_unassigned_jobs(new_id)
-        return new_id
+    def create_session(self, name: str | None = None):
+        """Register a fresh, empty session (call activate_session to use it)."""
+        return self.session_store.create(name)
 
-    def rename_session(self, session_id: int, name: str):
-        self.db.rename_session(session_id, name)
+    def rename_session(self, session_id, name: str):
+        self.session_store.rename(session_id, name)
 
-    def delete_session(self, session_id: int):
-        """Remove a session; its jobs stay in the database (only unlinked)."""
-        self.db.delete_session(session_id)
+    def _open_session_db(self, session_id: str):
+        """Point the Engine at another session file and reset in-memory state."""
+        self.db.close()
+        self.session_id = session_id
+        self.db = JobManager(session_db_path(session_id))
+        self.session_store.set_current(session_id)
+        self.queue = asyncio.Queue()
+        self.active_jobs.clear()
+        self.deleted_keys.clear()
+        self.processing_jobs.clear()
 
-    async def restore_saved_session(
-        self, session_id: int, base_path: str | None = None
-    ) -> list[Job]:
-        """Put a saved session's jobs back into the queue as waiting.
+    def open_session(self, session_id) -> bool:
+        """Switch to another session. The caller must have stopped the engine."""
+        if self.running or self.session_store.get(session_id) is None:
+            return False
+        if session_id != self.session_id:
+            self._open_session_db(session_id)
+        return True
 
-        This switches the queue over to the session: jobs still waiting from
-        the previous view are dropped from the queue (they stay in the
-        database), so restoring never mixes two sessions together.
-        """
-        jobs = self.db.session_jobs(session_id)
-        if not jobs:
+    def activate_session(self, session_id, base_path: str | None = None) -> list[Job]:
+        """Switch to a session and load its jobs (incomplete ones get queued)."""
+        if not self.open_session(session_id):
             return []
+        return self._load_current_jobs(base_path)
 
-        # Drain the pending queue so it can be rebuilt for this session.
-        self.clear_pending()
-
-        # Jobs already downloading must not be queued again.
-        busy = set(self.active_jobs)
-        pending: list[Job] = []
-
-        restored: list[Job] = []
+    def _load_current_jobs(self, base_path: str | None = None) -> list[Job]:
+        """Every job of the current session; incomplete ones are queued."""
+        jobs = self.db.all_jobs()
         for job in jobs:
+            job.session_id = self.session_id
             if base_path:
                 new_path = Path(base_path)
                 if job.save_path != new_path:
                     job.save_path = new_path
                     self.db.update_save_path(job.id, new_path)
-
-            if job.key not in busy:
+            if job.status is None or job.status in RESTORABLE_STATUSES:
                 self.db.update_status(job.id, STATUS_WAITING)
                 job.status = STATUS_WAITING
-                pending.append(job)
+                self.queue.put_nowait(job)
+        return jobs
 
-            restored.append(job)
+    def delete_session(self, session_id) -> str:
+        """Delete a session file (and its scratch folders).
 
-        for job in pending:
-            self.queue.put_nowait(job)
+        Returns the id of the session that is current afterwards; a fresh one
+        is created when the deleted session was the last one.
+        """
+        if session_id == self.session_id:
+            self.db.close()  # release the file before deleting it
+        self._delete_session_files(session_id)
+        was_current = self.session_store.remove(session_id)
+        if was_current:
+            remaining = self.session_store.list()
+            info = remaining[0] if remaining else self.session_store.create()
+            self._open_session_db(info.id)
+        return self.session_id
 
-        return restored
+    def delete_all_sessions(self) -> str:
+        """Remove every session; open a brand-new empty one."""
+        self.db.close()
+        for info in self.session_store.list():
+            self._delete_session_files(info.id)
+        self.session_store.clear()
+        info = self.session_store.create()
+        self._open_session_db(info.id)
+        return info.id
+
+    def _delete_session_files(self, session_id):
+        """Delete one session's scratch folders and its database file."""
+        db_path = session_db_path(session_id)
+        paths: set[Path] = set()
+        if db_path.exists():
+            try:
+                db = JobManager(db_path)
+                try:
+                    paths = {job.save_path for job in db.all_jobs()}
+                finally:
+                    db.close()
+            except sqlite3.Error as exc:
+                logger.warning(f"Could not read session {session_id} before delete: {exc}")
+        for path in paths:
+            remove_session_temp_dirs(path, session_id)
+        delete_session_files(session_id)

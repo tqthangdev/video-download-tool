@@ -301,6 +301,17 @@ HELP_TITLE_STYLE = "font-size:14px; font-weight:bold; color:#ff9800;"
 PREVIEW_META_STYLE = "color:#9e9e9e; font-size:12px;"
 FORMAT_GROUP_STYLE = "color:#00e5ff; font-size:13px; font-weight:bold; margin-top:4px;"
 
+# Session name in the sessions dialog: while read-only it is drawn as a plain
+# label (transparent background + no border) instead of a text box.
+SESSION_NAME_READONLY_STYLE = """
+QLineEdit {
+    background: transparent;
+    border: none;
+    padding: 0px;
+    color: #d4d4d4;
+}
+"""
+
 # Compact input (shutdown countdown box in the sidebar): same colors as the
 # regular inputs but with minimal padding so it stays small.
 COMPACT_INPUT_STYLE = """

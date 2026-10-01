@@ -8,10 +8,10 @@ The GUI is PyQt6; yt-dlp does the extraction and downloading. The application it
 
 - **Preview before download** — title, thumbnail, duration and every available format for the URL.
 - **Format picker** — MP4 qualities (e.g. `360p … 1080p`) and MP3 bitrates, as radio buttons. The actual yt-dlp format id is kept internally; the label is only presentation. Turn on **Auto convert to mp3** to send every pasted or imported link straight to MP3, and **Auto add queue** to queue each pasted link automatically.
-- **Queue with a SQLite job store** — a job is one URL + one selected format inside a session, so the same video can be queued at several qualities (and the same link can live in more than one session). Jobs survive restarts; on launch the app asks whether to restore the previous session.
-- **Saved sessions** — snapshot the current queue as a named session and restore it later, so separate workloads (e.g. YouTube and an anime site) don't mix. In the **Session** dialog you can **New** (clear the queue and start a fresh session), **Save current session**, rename, remove or restore sessions; removing one keeps its items in the database. Turn on **Auto-save on exit** to save the current session automatically when the app closes.
+- **Queue with a per-session SQLite store** — each session is its own database file, so separate workloads (YouTube vs. an anime site) never mix; a job is one URL + one selected format, so the same video can be queued at several qualities. Jobs survive restarts; on launch the app asks whether to restore the previous session.
+- **Sessions** — the **Session** dialog lists one row per session (`[radio] [name] [status]`) with **New**, **Select**, **Edit/Save**, **Remove** and **Remove all** actions. The current session is marked "in use" and its name is shown under **Add Queue**. Removing a session deletes its database file and its scratch folders; a new session's default name is a random id (rename it any time).
 - **Pause / resume / delete**, per-job progress (percent, downloaded size, speed, ETA) and clear-done. Interrupted downloads keep their partial data and continue where they left off.
-- **Clean output folder** — a job downloads into a hidden `.temp/<job_id>/` folder inside the output directory and only the finished file is moved out, so the folder never shows half-written files.
+- **Clean output folder** — a job downloads into a hidden `.temp/<session>/<job_id>/` folder inside the output directory and only the finished file is moved out, so the folder never shows half-written files.
 - **Batch import** — load a list of URLs from a `.txt` file; the default quality/bitrate from the settings is applied to each.
 - **Generic media discovery** — when an extractor returns nothing usable (common on sites and their clones that build the player with plain JavaScript), the page and the player it loads are scanned for media URLs, and the better manifest is used. This needs no per-site configuration.
 - **Auto shutdown** when the queue finishes, with a countdown.
@@ -82,9 +82,9 @@ Both launchers install the dependencies automatically if they are missing. Or ru
 
 Keys the app no longer knows about are dropped the next time the file is written. Authentication for sites that need it is left to yt-dlp: point `cookies_file` at an exported `cookies.txt`, or let `cookies_from_browser` read them straight from your browser.
 
-The sidebar toggles — **Auto add queue**, **Auto convert to mp3**, **Auto-save on exit**, **Shutdown when done** — and the last save folder are kept in the app's own settings (`QSettings`), next to `config.json`, not in it. The session you were last working in is kept there too, so a restart restores only that session.
+The sidebar toggles — **Auto add queue**, **Auto convert to mp3**, **Shutdown when done** — and the last save folder are kept in the app's own settings (`QSettings`), next to `config.json`, not in it. Sessions live in `data/sessions.json`: the registry maps each session's id to its name and remembers the current one, so a restart asks to restore only that session.
 
-Output files are named after the video title (`<title>.mp4` / `<title>.mp3`). Titles longer than the filesystem limit are truncated safely, and spam links embedded in titles are stripped. While a job is running its data stays in `<output>/.temp/<job_id>/` and is moved into the output folder once complete, so partially downloaded files never appear there; scratch folders left by removed jobs are cleaned up on the next launch.
+Output files are named after the video title (`<title>.mp4` / `<title>.mp3`). Titles longer than the filesystem limit are truncated safely, and spam links embedded in titles are stripped. While a job is running its data stays in `<output>/.temp/<session>/<job_id>/` and is moved into the output folder once complete, so partially downloaded files never appear there; scratch folders left by removed jobs are cleaned up on the next launch.
 
 ## Build
 

@@ -292,31 +292,40 @@ def is_partial_name(name: str) -> bool:
 # ================= DOWNLOAD SCRATCH FOLDERS (flow.md #27, #29) =================
 
 # yt-dlp downloads and post-processes inside a per-job scratch folder
-# (``<save_path>/.temp/<job_id>``). The folder name is the SQLite job id, so it
-# stays the same across sessions and yt-dlp can resume the ``.part`` file it
-# left there (flow.md #29). The finished file is then moved out with a
-# same-filesystem rename, so the save folder only ever receives complete
-# outputs, and cleanup is a single rmtree of the job's scratch folder.
+# (``<save_path>/.temp/<session_id>/<job_id>``). It is scoped by session because
+# each session is its own database and numbers its jobs from 1, so job ids would
+# otherwise collide across sessions. The folder is stable for a job, so yt-dlp
+# can resume the ``.part`` file it left there (flow.md #29). The finished file is
+# then moved out with a same-filesystem rename, so the save folder only ever
+# receives complete outputs, and cleanup is a single rmtree of the job's folder.
 TEMP_DIR_NAME = ".temp"
 
 
-def job_temp_dir(save_path, job_id) -> Path:
+def job_temp_dir(save_path, session_id, job_id) -> Path:
     """Scratch folder yt-dlp downloads one job into."""
-    return Path(save_path) / TEMP_DIR_NAME / str(job_id)
+    return Path(save_path) / TEMP_DIR_NAME / str(session_id) / str(job_id)
 
 
-def remove_job_temp_dir(save_path, job_id) -> None:
+def remove_job_temp_dir(save_path, session_id, job_id) -> None:
     """Delete a job's scratch folder with everything left in it."""
     if job_id is None:
         return
-    shutil.rmtree(job_temp_dir(save_path, job_id), ignore_errors=True)
+    shutil.rmtree(job_temp_dir(save_path, session_id, job_id), ignore_errors=True)
 
 
-def cleanup_orphan_temp_dirs(save_path, keep_ids) -> int:
-    """Delete ``.temp/<job_id>`` folders whose job no longer exists.
+def remove_session_temp_dirs(save_path, session_id) -> None:
+    """Delete every scratch folder belonging to one session."""
+    if not session_id:
+        return
+    shutil.rmtree(Path(save_path) / TEMP_DIR_NAME / str(session_id), ignore_errors=True)
 
-    Folders in ``keep_ids`` (jobs still restorable) are kept so their partial
-    download can resume.
+
+def cleanup_orphan_temp_dirs(save_path, keep_keys) -> int:
+    """Delete scratch folders whose ``(session_id, job_id)`` is no longer live.
+
+    ``keep_keys`` holds the ``(session_id, job_id)`` pairs of jobs that can
+    still be resumed. Legacy ``.temp/<job_id>`` folders (written before sessions
+    existed) cannot be resumed under the new layout, so they are removed too.
     """
     root = Path(save_path) / TEMP_DIR_NAME
     if not root.is_dir():
@@ -326,14 +335,27 @@ def cleanup_orphan_temp_dirs(save_path, keep_ids) -> int:
     for entry in root.iterdir():
         if not entry.is_dir():
             continue
-        try:
-            job_id = int(entry.name)
-        except ValueError:
-            continue  # not one of ours
-        if job_id in keep_ids:
+        if entry.name.isdigit():
+            shutil.rmtree(entry, ignore_errors=True)
+            removed += 1
             continue
-        shutil.rmtree(entry, ignore_errors=True)
-        removed += 1
+
+        session_id = entry.name
+        for job_entry in entry.iterdir():
+            if not job_entry.is_dir():
+                continue
+            try:
+                job_id = int(job_entry.name)
+            except ValueError:
+                continue
+            if (session_id, job_id) in keep_keys:
+                continue
+            shutil.rmtree(job_entry, ignore_errors=True)
+            removed += 1
+        try:
+            entry.rmdir()
+        except OSError:
+            pass
     return removed
 
 

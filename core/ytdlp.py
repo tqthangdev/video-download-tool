@@ -533,7 +533,7 @@ class YtdlpClient:
             else:
                 logger.warning(f"[{job.title}] could not refresh the media manifest; retrying the page")
 
-        temp_dir = job_temp_dir(job.save_path, job.id)
+        temp_dir = job_temp_dir(job.save_path, job.session_id, job.id)
         opts = self._base_opts({
             "format": fmt.get("format_id") or "best",
             "outtmpl": build_output_template(job.title),

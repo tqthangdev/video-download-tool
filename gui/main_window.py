@@ -3,7 +3,6 @@ import os
 import platform
 import subprocess
 import sys
-from datetime import datetime
 from pathlib import Path
 
 from qasync import asyncSlot
@@ -22,7 +21,7 @@ from gui.video_preview import fetch_thumbnail_bytes
 from core.logger import logger
 from core.i18n import tr, add_listener, set_lang
 from core.format_selector import build_choices, select_audio_format, select_default_format
-from core.job_manager import Job
+from core.job_manager import STATUS_DONE, Job
 from core.errors import ApplicationError
 
 
@@ -57,12 +56,10 @@ class MainWindow(QWidget):
         self._closing = False
         self._shutdown_cancelled = False
         self._shutdown_seconds_left = 0
-        # The session the user was last working in, so a restart restores only
-        # that one (plus unsaved items) instead of every session at once.
-        self._session_saved_id = self._current_session_id()
 
         self.init_ui()
         self._update_buttons()
+        self._update_session_label()
 
     # =========================
     # UI SETUP
@@ -99,7 +96,7 @@ class MainWindow(QWidget):
         # Ask first: only run restore_session when the user wants the previous
         # session back (feedback.md #4). Nothing to ask when there is nothing
         # to restore.
-        if not self.engine.db.get_restorable_jobs(self._restorable_session_ids()):
+        if not self.engine.db.get_restorable_jobs():
             return
 
         box = QMessageBox(self)
@@ -112,6 +109,12 @@ class MainWindow(QWidget):
         box.exec()
 
         if box.clickedButton() is not btn_yes:
+            # Declining starts a fresh session; the previous one stays saved and
+            # can be picked from the sessions dialog (feedback.md #2).
+            info = self.engine.create_session()
+            self.engine.activate_session(info.id, self._base_path())
+            self.right.clear_queue()
+            self._update_session_label()
             return
 
         self.restore_modal = RestoreDialog(self)
@@ -277,7 +280,6 @@ class MainWindow(QWidget):
                 selected_format=choice.to_dict(),
                 thumbnail=self._video_info.thumbnail,
                 extractor=self._video_info.extractor,
-                session_id=self._session_saved_id or 0,
             )
 
             result = await self.engine.add_job(job)
@@ -360,7 +362,6 @@ class MainWindow(QWidget):
                         selected_format=choice.to_dict(),
                         thumbnail=info.thumbnail,
                         extractor=info.extractor,
-                        session_id=self._session_saved_id or 0,
                     )
                     async with db_lock:
                         result = await self.engine.add_job(job)
@@ -429,22 +430,15 @@ class MainWindow(QWidget):
     # =========================
     # SESSION RESTORE
     # =========================
-    def _restorable_session_ids(self) -> list[int]:
-        """Sessions to bring back on launch: the current one + unsaved items."""
-        if self._session_saved_id:
-            return [0, self._session_saved_id]
-        return [0]
-
     @asyncSlot()
     async def _restore_session(self):
         base_path = self.left.path_input.text().strip()
 
+        self.right.clear_queue()
         queue = self.right.queue_list
         queue.setUpdatesEnabled(False)
         try:
-            async for current, total, job in self.engine.restore_session(
-                base_path, self._session_saved_id
-            ):
+            async for current, total, job in self.engine.restore_session(base_path):
                 self.right.update_queue_item(job, "Waiting")
                 if getattr(self, "restore_modal", None):
                     self.restore_modal.set_progress(current, total)
@@ -457,96 +451,74 @@ class MainWindow(QWidget):
         self._update_buttons()
 
     # =========================
-    # SAVED SESSIONS
+    # SESSIONS
     # =========================
+    def _base_path(self) -> str | None:
+        return self.left.path_input.text().strip() or None
+
+    def _update_session_label(self):
+        info = self.engine.current_session()
+        self.left.set_session_name(info.name if info else "")
+
+    def _populate_queue(self, jobs):
+        for job in jobs:
+            status = "Done" if job.status == STATUS_DONE else "Waiting"
+            self.right.update_queue_item(job, status)
+
     def open_sessions(self):
         dialog = SessionDialog(self.engine, self)
-        dialog.restoreRequested.connect(self._on_session_restore)
-        dialog.saveRequested.connect(self._on_session_save)
         dialog.newRequested.connect(self._on_session_new)
+        dialog.selectRequested.connect(self._on_session_select)
+        dialog.removeRequested.connect(self._on_session_remove)
+        dialog.removeAllRequested.connect(self._on_session_remove_all)
         dialog.exec()
+        # Renames / switches happen inside the dialog, so resync the label.
+        self._update_session_label()
         self._update_buttons()
 
-    def _default_session_name(self) -> str:
-        now = datetime.now()
-        return (
-            f"Session_{now:%d-%m-%Y}_{now:%H-%M-%S}-{now.microsecond // 1000:03d}"
-        )
+    async def _stop_for_session_change(self):
+        """Selecting/removing a session must not fight an active download."""
+        if self.engine.running:
+            await self.engine.stop()
 
-    def _current_session_id(self) -> int | None:
-        """The persisted current session, if it still exists."""
-        session_id = self.settings.value("current_session_id", 0, type=int) or 0
-        if session_id and not self.engine.db.get_session(session_id):
-            session_id = 0
-        return session_id or None
-
-    def _set_current_session(self, session_id: int | None):
-        self._session_saved_id = session_id
-        self.settings.setValue("current_session_id", session_id or 0)
-
-    def _save_current_session(self) -> bool:
-        """Snapshot the current queue; True when a session now holds it."""
-        try:
-            session_id = self.engine.save_session(
-                name=self._default_session_name(),
-                session_id=self._session_saved_id,
-            )
-        except Exception:
-            logger.exception("Failed to save the current session")
-            return False
-
-        if session_id is None:
-            return False
-
-        self._set_current_session(session_id)
-        return True
-
-    def _on_session_save(self):
-        if self._save_current_session():
-            self._show_message(tr("notify"), tr("session_saved"))
-        else:
-            self._show_message(tr("notify"), tr("session_saved_nothing"))
-
-    def _on_session_new(self):
-        """Start a fresh session: keep the current batch, clear the queue.
-
-        The current items are saved into their session first (so the next
-        batch cannot be folded into them), then the queue is emptied and a new
-        empty session is opened.
-        """
-        if self.right.queue_list.count() > 0:
-            self._save_current_session()
-
+    @asyncSlot()
+    async def _on_session_new(self):
+        """Start a fresh empty session; the previous one stays saved."""
+        await self._stop_for_session_change()
+        info = self.engine.create_session()
+        self.engine.activate_session(info.id, self._base_path())
         self.right.clear_queue()
-        self.engine.clear_pending()
-
-        try:
-            self._set_current_session(
-                self.engine.create_session(self._default_session_name())
-            )
-        except Exception:
-            logger.exception("Failed to start a new session")
-            self._set_current_session(None)
-
-    @asyncSlot(int)
-    async def _on_session_restore(self, session_id):
-        base_path = self.left.path_input.text().strip()
-        # Restoring switches the queue over to this session, so clear what is
-        # shown first (the jobs stay in the database).
-        self.right.clear_queue()
-        try:
-            jobs = await self.engine.restore_saved_session(session_id, base_path)
-        except Exception:
-            logger.exception(f"Failed to restore session {session_id}")
-            self._show_message(tr("error"), tr("session_restore_failed"), critical=True)
-            return
-
-        for job in jobs:
-            self.right.update_queue_item(job, "Waiting")
-        # New items now belong to the restored session.
-        self._set_current_session(session_id or None)
+        self._update_session_label()
         self._update_buttons()
-        self._show_message(tr("notify"), tr("session_restored").format(count=len(jobs)))
+
+    @asyncSlot(str)
+    async def _on_session_select(self, session_id):
+        await self._stop_for_session_change()
+        self.right.clear_queue()
+        jobs = self.engine.activate_session(session_id, self._base_path())
+        self._populate_queue(jobs)
+        self._update_session_label()
+        self._update_buttons()
+
+    @asyncSlot(str)
+    async def _on_session_remove(self, session_id):
+        await self._stop_for_session_change()
+        was_current = session_id == self.engine.session_id
+        new_current = self.engine.delete_session(session_id)
+        if was_current:
+            self.right.clear_queue()
+            jobs = self.engine.activate_session(new_current, self._base_path())
+            self._populate_queue(jobs)
+        self._update_session_label()
+        self._update_buttons()
+
+    @asyncSlot()
+    async def _on_session_remove_all(self):
+        await self._stop_for_session_change()
+        self.engine.delete_all_sessions()
+        self.right.clear_queue()
+        self._update_session_label()
+        self._update_buttons()
 
     @asyncSlot()
     async def start_engine(self):
@@ -696,15 +668,8 @@ class MainWindow(QWidget):
             event.accept()
             return
 
-        # With items in the queue, offer to save the current session before
-        # exiting (feedback.md #5). When auto-save is on this happens without
-        # asking.
-        if self.right.queue_list.count() > 0:
-            if self.left.save_session_cb.isChecked():
-                self._save_current_session()
-            elif self._ask_save_session():
-                self._save_current_session()
-
+        # Jobs are saved to the current session's file as they are added, so
+        # there is nothing to save on exit -- only the exit confirmation.
         msg = tr("close_confirm_running") if self.engine.running else tr("close_confirm_idle")
 
         box = QMessageBox(self)
@@ -723,18 +688,6 @@ class MainWindow(QWidget):
 
         event.ignore()
         asyncio.ensure_future(self._shutdown())
-
-    def _ask_save_session(self) -> bool:
-        box = QMessageBox(self)
-        box.setWindowTitle(tr("session_unsaved_title"))
-        box.setText(tr("session_unsaved_text"))
-        box.setIcon(QMessageBox.Icon.Question)
-
-        btn_save = box.addButton(tr("session_save"), QMessageBox.ButtonRole.AcceptRole)
-        box.addButton(tr("cancel"), QMessageBox.ButtonRole.RejectRole)
-        box.setDefaultButton(btn_save)
-        box.exec()
-        return box.clickedButton() is btn_save
 
     async def _shutdown(self):
         try:

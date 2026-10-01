@@ -26,6 +26,7 @@ from gui.theme import (
     CONFIG_DIALOG_STYLE,
     HELP_BUTTON_STYLE,
     COMPACT_INPUT_STYLE,
+    PREVIEW_META_STYLE,
 )
 from gui.video_preview import VideoPreview
 from gui.widgets import make_checkbox, make_radio_button
@@ -134,40 +135,15 @@ class LeftPanel(QWidget):
         self.input_stack.addWidget(manual_page)  # index 0 = manual
         self.input_stack.addWidget(auto_page)    # index 1 = auto
 
-        # ================= CHECKBOX + SAVE SESSION =================
-        session_row = QWidget()
-        session_layout = QHBoxLayout(session_row)
-        session_layout.setContentsMargins(0, 0, 0, 0)
-        session_layout.setSpacing(6)
-
-        checkbox_session_col = QVBoxLayout()
-        checkbox_session_col.setContentsMargins(0, 0, 0, 0)
-        checkbox_session_col.setSpacing(6)
-
-        self.save_session_cb = make_checkbox(tr("save_session"))
-        self.save_session_cb.setChecked(
-            self.settings.value("save_session", False, type=bool)
-        )
-        self.save_session_cb.toggled.connect(self.on_save_session_toggled)
-
-        checkbox_session_col.addWidget(self.save_session_cb, 0, Qt.AlignmentFlag.AlignLeft)
-
-        self.btn_session = QPushButton(tr("session"))
-        self.btn_session.setFixedWidth(SIDE_BUTTON_WIDTH)
-
-        session_layout.addLayout(checkbox_session_col, 1)
-        session_layout.addWidget(self.btn_session)
-        session_layout.setAlignment(self.btn_session, Qt.AlignmentFlag.AlignTop)
-
-        # ================= CHECKBOX + SETTINGS =================
+        # ================= CHECKBOX SHUTDOWN + BUTTON SETTINGS =================
         settings_row = QWidget()
         settings_layout = QHBoxLayout(settings_row)
         settings_layout.setContentsMargins(0, 0, 0, 0)
         settings_layout.setSpacing(6)
 
-        checkbox_col = QVBoxLayout()
-        checkbox_col.setContentsMargins(0, 0, 0, 0)
-        checkbox_col.setSpacing(6)
+        checkbox_shutdown_col = QVBoxLayout()
+        checkbox_shutdown_col.setContentsMargins(0, 0, 0, 0)
+        checkbox_shutdown_col.setSpacing(6)
 
         self.shutdown_cb = make_checkbox(tr("shutdown_after_done"))
         self.shutdown_cb.setChecked(
@@ -198,29 +174,65 @@ class LeftPanel(QWidget):
         shutdown_row_layout.addWidget(self.shutdown_delay_unit)
         shutdown_row_layout.addStretch()
 
+        checkbox_shutdown_col.addWidget(shutdown_row, 0, Qt.AlignmentFlag.AlignLeft)
+
+        self.btn_settings = QPushButton(tr("settings"))
+        self.btn_settings.setFixedWidth(SIDE_BUTTON_WIDTH)
+        self.btn_settings.clicked.connect(self.open_settings)
+
+        settings_layout.addLayout(checkbox_shutdown_col, 1)
+        settings_layout.addWidget(self.btn_settings)
+        settings_layout.setAlignment(self.btn_settings, Qt.AlignmentFlag.AlignTop)
+
+        # ================= CHECKBOX CONVERT MP3 + BUTTON SESSION =================
+        session_row = QWidget()
+        session_layout = QHBoxLayout(session_row)
+        session_layout.setContentsMargins(0, 0, 0, 0)
+        session_layout.setSpacing(6)
+
+        checkbox_convert_mp3_col = QVBoxLayout()
+        checkbox_convert_mp3_col.setContentsMargins(0, 0, 0, 0)
+        checkbox_convert_mp3_col.setSpacing(6)
+
         self.auto_mp3_cb = make_checkbox(tr("auto_mp3"))
         self.auto_mp3_cb.setChecked(
             self.settings.value("auto_mp3", False, type=bool)
         )
         self.auto_mp3_cb.toggled.connect(self.on_auto_mp3_toggled)
+        
+        checkbox_convert_mp3_col.addWidget(self.auto_mp3_cb, 0, Qt.AlignmentFlag.AlignLeft)
+
+        self.btn_session = QPushButton(tr("session"))
+        self.btn_session.setFixedWidth(SIDE_BUTTON_WIDTH)
+
+        session_layout.addLayout(checkbox_convert_mp3_col, 1)
+        session_layout.addWidget(self.btn_session)
+        session_layout.setAlignment(self.btn_session, Qt.AlignmentFlag.AlignTop)
+        
+        # ================= CHECKBOX AUTO QUEUE + BUTTON ABOUT =================
+        about_row = QWidget()
+        about_layout = QHBoxLayout(about_row)
+        about_layout.setContentsMargins(0, 0, 0, 0)
+        about_layout.setSpacing(6)
+
+        checkbox_auto_queue_col = QVBoxLayout()
+        checkbox_auto_queue_col.setContentsMargins(0, 0, 0, 0)
+        checkbox_auto_queue_col.setSpacing(6)
 
         self.auto_queue_cb = make_checkbox(tr("auto_queue"))
         self.auto_queue_cb.setChecked(
             self.settings.value("auto_queue", False, type=bool)
         )
         self.auto_queue_cb.toggled.connect(self.on_auto_queue_toggled)
+        
+        checkbox_auto_queue_col.addWidget(self.auto_queue_cb, 0, Qt.AlignmentFlag.AlignLeft)
 
-        checkbox_col.addWidget(shutdown_row, 0, Qt.AlignmentFlag.AlignLeft)
-        checkbox_col.addWidget(self.auto_mp3_cb, 0, Qt.AlignmentFlag.AlignLeft)
-        checkbox_col.addWidget(self.auto_queue_cb, 0, Qt.AlignmentFlag.AlignLeft)
+        self.btn_about = QPushButton(tr("about"))
+        self.btn_about.setFixedWidth(SIDE_BUTTON_WIDTH)
 
-        self.btn_settings = QPushButton(tr("settings"))
-        self.btn_settings.setFixedWidth(SIDE_BUTTON_WIDTH)
-        self.btn_settings.clicked.connect(self.open_settings)
-
-        settings_layout.addLayout(checkbox_col, 1)
-        settings_layout.addWidget(self.btn_settings)
-        settings_layout.setAlignment(self.btn_settings, Qt.AlignmentFlag.AlignTop)
+        about_layout.addLayout(checkbox_auto_queue_col, 1)
+        about_layout.addWidget(self.btn_about)
+        about_layout.setAlignment(self.btn_about, Qt.AlignmentFlag.AlignTop)        
 
         # ================= PATH AREA =================
         path_area = QWidget()
@@ -247,19 +259,13 @@ class LeftPanel(QWidget):
         path_layout.addWidget(self.path_input, 1)
         path_layout.addWidget(self.btn_folder)
 
-        # ================= ADD QUEUE / ABOUT BUTTONS =================
+        # ================= ADD QUEUE + CURRENT SESSION =================
         self.btn_add = QPushButton(tr("add_queue"))
         self.btn_add.setDisabled(True)
 
-        self.btn_about = QPushButton(tr("about"))
-        self.btn_about.setFixedWidth(SIDE_BUTTON_WIDTH)
-
-        add_row = QWidget()
-        add_row_layout = QHBoxLayout(add_row)
-        add_row_layout.setContentsMargins(0, 0, 0, 0)
-        add_row_layout.setSpacing(6)
-        add_row_layout.addWidget(self.btn_add, 1)
-        add_row_layout.addWidget(self.btn_about)
+        self._session_name = ""
+        self.session_label = QLabel("")
+        self.session_label.setStyleSheet(PREVIEW_META_STYLE)
 
         # ================= VIDEO PREVIEW =================
         self.preview = VideoPreview()
@@ -268,9 +274,11 @@ class LeftPanel(QWidget):
         layout.addWidget(self.mode_area, 0)
         layout.addWidget(self.input_stack, 0)
         layout.addWidget(path_area, 0)
-        layout.addWidget(session_row, 0)
         layout.addWidget(settings_row, 0)
-        layout.addWidget(add_row, 0)
+        layout.addWidget(session_row, 0)
+        layout.addWidget(about_row, 0)
+        layout.addWidget(self.btn_add, 0)
+        layout.addWidget(self.session_label, 0)
         layout.addWidget(self.preview, 1)
 
         # events that only affect this panel's own widgets
@@ -296,9 +304,6 @@ class LeftPanel(QWidget):
     def on_auto_mp3_toggled(self, checked):
         self.settings.setValue("auto_mp3", checked)
 
-    def on_save_session_toggled(self, checked):
-        self.settings.setValue("save_session", checked)
-
     def on_shutdown_toggled(self, checked):
         self.settings.setValue("shutdown_after_done", checked)
         self.shutdown_delay.setEnabled(checked)
@@ -320,6 +325,18 @@ class LeftPanel(QWidget):
         except ValueError:
             return 60
 
+    def set_session_name(self, name: str):
+        """Show which session the queue currently belongs to."""
+        self._session_name = name or ""
+        self._refresh_session_label()
+
+    def _refresh_session_label(self):
+        self.session_label.setText(
+            tr("session_current").format(name=self._session_name)
+            if self._session_name
+            else ""
+        )
+
     # =========================
     # UPDATE TEXT WHEN THE LANGUAGE CHANGES
     # =========================
@@ -335,8 +352,8 @@ class LeftPanel(QWidget):
         self.btn_about.setText(tr("about"))
         self.auto_queue_cb.setText(tr("auto_queue"))
         self.auto_mp3_cb.setText(tr("auto_mp3"))
-        self.save_session_cb.setText(tr("save_session"))
         self.btn_session.setText(tr("session"))
+        self._refresh_session_label()
         self.shutdown_cb.setText(tr("shutdown_after_done"))
         self.shutdown_delay.setToolTip(tr("shutdown_delay_hint"))
         self.shutdown_delay_unit.setText(tr("shutdown_seconds"))
