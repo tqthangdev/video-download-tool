@@ -117,7 +117,25 @@ TRANSLATIONS = {
         "field_video_quality_desc": "Chất lượng video được chọn sẵn khi thêm từ file (chọn trong danh sách).\n\nNếu video không có đúng chất lượng này, app chọn mức gần nhất.",
         "field_audio_bitrate": "Bitrate audio mặc định",
         "field_audio_bitrate_desc": "Bitrate MP3 được chọn sẵn khi thêm từ file (chọn trong danh sách).",
-        # Queue status
+        # Version dialog
+        "version": "Phiên bản",
+        "version_title": "Phiên bản",
+        "version_label": "Phiên bản: {version}",
+        "version_checking": "Đang kiểm tra phiên bản mới...",
+        "version_current": "Đang dùng: {version}",
+        "version_latest": "Mới nhất: {version}",
+        "version_up_to_date": "Bạn đang dùng bản mới nhất.",
+        "version_check_failed": "Không kiểm tra được phiên bản: {error}",
+        "version_available": "Có bản cập nhật mới!",
+        "version_whats_new": "Có gì mới",
+        "update": "Cập nhật",
+        "later": "Để sau",
+        "retry": "Thử lại",
+        "update_downloading": "Đang tải {version}... {percent}% ({done} MB / {total} MB)",
+        "update_downloading_unknown": "Đang tải {version}...",
+        "update_ready": "Đã sẵn sàng. Ứng dụng sẽ đóng rồi khởi động lại bằng bản mới.",
+        "update_failed": "Cập nhật thất bại: {error}",
+        "update_no_package": "Bản phát hành này không có gói cho hệ điều hành của bạn.",
     },
     "en": {
         # Common
@@ -235,7 +253,25 @@ TRANSLATIONS = {
         "field_video_quality_desc": "Pre-selected video quality when adding from a file (pick from the list).\n\nIf a video lacks that exact quality, the closest one is chosen.",
         "field_audio_bitrate": "Default audio bitrate",
         "field_audio_bitrate_desc": "Pre-selected MP3 bitrate when adding from a file (pick from the list).",
-        # Queue status
+        # Version dialog
+        "version": "Version",
+        "version_title": "Version",
+        "version_label": "Version: {version}",
+        "version_checking": "Checking for a newer version...",
+        "version_current": "Current: {version}",
+        "version_latest": "Latest: {version}",
+        "version_up_to_date": "You are using the latest version.",
+        "version_check_failed": "Could not check for updates: {error}",
+        "version_available": "A new version is available!",
+        "version_whats_new": "What's new",
+        "update": "Update",
+        "later": "Later",
+        "retry": "Retry",
+        "update_downloading": "Downloading {version}... {percent}% ({done} MB / {total} MB)",
+        "update_downloading_unknown": "Downloading {version}...",
+        "update_ready": "Ready. The app will close and restart with the new version.",
+        "update_failed": "Update failed: {error}",
+        "update_no_package": "This release has no package for your platform.",
     },
 }
 

@@ -8,20 +8,22 @@ def _get_base_dir() -> Path:
     return Path(__file__).resolve().parent
 
 
-# --- Normal app run mode ---
-import asyncio
-from concurrent.futures import ThreadPoolExecutor
-
-from PyQt6.QtWidgets import QApplication
-from qasync import QEventLoop
-
-from gui.main_window import MainWindow
-from core.engine import Engine
-from core.utils import CONFIG
-
-
 def main():
+    # Imports live here so `--update` can run without loading Qt or the GUI.
+    import asyncio
+    from concurrent.futures import ThreadPoolExecutor
+
     from PyQt6.QtGui import QIcon
+    from PyQt6.QtWidgets import QApplication
+    from qasync import QEventLoop
+
+    from gui.main_window import MainWindow
+    from core.engine import Engine
+    from core.utils import CONFIG
+    from core.updater.installer import cleanup_staging
+
+    # A leftover staging folder from a previous update is removed here.
+    cleanup_staging()
 
     app = QApplication(sys.argv)
 
@@ -47,6 +49,13 @@ def main():
 
 
 if __name__ == "__main__":
+    # `--update` runs the standalone updater, which replaces this installation
+    # after the app exits. It must not import Qt (see core/updater/apply.py).
+    if "--update" in sys.argv[1:]:
+        from core.updater.apply import run_from_cli
+
+        sys.exit(run_from_cli(sys.argv[1:]))
+
     try:
         main()
     except Exception:

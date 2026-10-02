@@ -126,6 +126,10 @@ datas = [
         str(BASE_DIR / "data" / "config.json"),
         ".",
     ),
+    (
+        str(BASE_DIR / "version.json"),
+        ".",
+    ),
 ]
 
 # ==========================================

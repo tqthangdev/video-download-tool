@@ -23,6 +23,7 @@ from core.i18n import tr, add_listener, set_lang
 from core.format_selector import build_choices, select_audio_format, select_default_format
 from core.job_manager import STATUS_DONE, Job
 from core.errors import ApplicationError
+from core.updater.installer import spawn_updater
 
 
 class MainWindow(QWidget):
@@ -78,6 +79,7 @@ class MainWindow(QWidget):
         self.left.btn_add.clicked.connect(self.add_queue)
         self.left.btn_session.clicked.connect(self.open_sessions)
         self.left.auto_mp3_cb.toggled.connect(self._on_auto_mp3_toggled)
+        self.left.updateReady.connect(self._on_update_ready)
 
         self.right.btn_start.clicked.connect(self.start_engine)
         self.right.btn_resume.clicked.connect(self.toggle_resume_engine)
@@ -659,6 +661,41 @@ class MainWindow(QWidget):
         except Exception:
             logger.exception("Failed to shut down the system")
             self._show_message(tr("error"), tr("shutdown_failed"), critical=True)
+
+    # =========================
+    # APPLY A STAGED UPDATE
+    # =========================
+    @asyncSlot()
+    async def _on_update_ready(self):
+        """Stop the engine, hand the swap to the updater, then exit.
+
+        The staged build is already downloaded and verified; the updater waits
+        for this process to end before replacing any file.
+        """
+        pending = self.left.take_pending_update()
+        if not pending:
+            return
+
+        source, version = pending
+        self._closing = True
+
+        try:
+            if self.engine.running:
+                await self.engine.stop()
+        except Exception:
+            logger.exception("Failed to stop the engine before updating")
+
+        try:
+            spawn_updater(source, version)
+        except Exception as exc:
+            logger.exception("Failed to start the updater")
+            self._closing = False
+            self._show_message(
+                tr("error"), tr("update_failed").format(error=exc), critical=True
+            )
+            return
+
+        QApplication.instance().quit()
 
     # =========================
     # CLOSE EVENT CONFIRMATION

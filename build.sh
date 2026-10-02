@@ -72,6 +72,7 @@ echo "=== Verify project ==="
 test -f run.py
 test -f data/config.json
 test -f assets/icon.png
+test -f version.json
 
 # ==========================================
 # CLEAN OLD BUILD
@@ -106,6 +107,10 @@ datas = [
     ),
     (
         str(BASE_DIR / "data" / "config.json"),
+        ".",
+    ),
+    (
+        str(BASE_DIR / "version.json"),
         ".",
     ),
 ]

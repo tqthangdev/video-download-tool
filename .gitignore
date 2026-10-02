@@ -67,6 +67,9 @@ temp/
 *.tmp
 *.temp
 
+# Update staging area (core/updater)
+.update/
+
 # ==============================
 
 # Build / Distribution

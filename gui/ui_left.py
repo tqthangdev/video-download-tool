@@ -11,25 +11,25 @@ from PyQt6.QtWidgets import (
     QDialog,
     QFormLayout,
     QDialogButtonBox,
-    QToolButton,
     QComboBox,
     QStackedWidget,
     QFrame,
 )
-from PyQt6.QtCore import Qt, QSettings
+from PyQt6.QtCore import Qt, QSettings, pyqtSignal
 
 from core.utils import CONFIG, save_config
 from core.i18n import tr, set_lang, get_lang
+from core.updater.version import read_current_version
 from gui.cursor_utils import apply_pointer_cursors
+from gui.version_dialog import VersionDialog, display_version
 from gui.theme import (
     HELP_TITLE_STYLE,
     CONFIG_DIALOG_STYLE,
-    HELP_BUTTON_STYLE,
     COMPACT_INPUT_STYLE,
     PREVIEW_META_STYLE,
 )
 from gui.video_preview import VideoPreview
-from gui.widgets import make_checkbox, make_radio_button
+from gui.widgets import make_checkbox, make_help_button, make_radio_button
 
 # Shared width for the small buttons on the right of each input row
 # (Paste / Folder / Settings / About). Keeping them equal keeps the rows aligned.
@@ -62,10 +62,14 @@ class LeftPanel(QWidget):
     - Video preview (metadata + format radio buttons)
     """
 
+    # Emitted when a newer build has been staged and the app should restart.
+    updateReady = pyqtSignal()
+
     def __init__(self, settings: QSettings, parent=None):
         super().__init__(parent)
 
         self.settings = settings
+        self._pending_update = None
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         self.init_ui()
 
@@ -259,13 +263,28 @@ class LeftPanel(QWidget):
         path_layout.addWidget(self.path_input, 1)
         path_layout.addWidget(self.btn_folder)
 
-        # ================= ADD QUEUE + CURRENT SESSION =================
+        # ================= BUTTON ADD QUEUE =================
         self.btn_add = QPushButton(tr("add_queue"))
         self.btn_add.setDisabled(True)
 
+        # ================= LABEL META =================
         self._session_name = ""
         self.session_label = QLabel("")
         self.session_label.setStyleSheet(PREVIEW_META_STYLE)
+
+        self.version_label = QLabel("")
+        self.version_label.setStyleSheet(PREVIEW_META_STYLE)
+        self._refresh_version_label()
+
+        self.version_icon = make_help_button(self.open_version)
+
+        meta_row = QWidget()
+        meta_layout = QHBoxLayout(meta_row)
+        meta_layout.setContentsMargins(0, 0, 0, 0)
+        meta_layout.addWidget(self.session_label)
+        meta_layout.addStretch()
+        meta_layout.addWidget(self.version_label)
+        meta_layout.addWidget(self.version_icon)
 
         # ================= VIDEO PREVIEW =================
         self.preview = VideoPreview()
@@ -278,7 +297,7 @@ class LeftPanel(QWidget):
         layout.addWidget(session_row, 0)
         layout.addWidget(about_row, 0)
         layout.addWidget(self.btn_add, 0)
-        layout.addWidget(self.session_label, 0)
+        layout.addWidget(meta_row, 0)
         layout.addWidget(self.preview, 1)
 
         # events that only affect this panel's own widgets
@@ -337,6 +356,11 @@ class LeftPanel(QWidget):
             else ""
         )
 
+    def _refresh_version_label(self):
+        self.version_label.setText(
+            tr("version_label").format(version=display_version(read_current_version()))
+        )
+
     # =========================
     # UPDATE TEXT WHEN THE LANGUAGE CHANGES
     # =========================
@@ -354,6 +378,7 @@ class LeftPanel(QWidget):
         self.auto_mp3_cb.setText(tr("auto_mp3"))
         self.btn_session.setText(tr("session"))
         self._refresh_session_label()
+        self._refresh_version_label()
         self.shutdown_cb.setText(tr("shutdown_after_done"))
         self.shutdown_delay.setToolTip(tr("shutdown_delay_hint"))
         self.shutdown_delay_unit.setText(tr("shutdown_seconds"))
@@ -367,6 +392,18 @@ class LeftPanel(QWidget):
 
     def open_about(self):
         _AboutDialog(self).exec()
+
+    def open_version(self):
+        """Check for a new build; emit `updateReady` once one is staged."""
+        dialog = VersionDialog(self)
+        dialog.exec()
+        if dialog.staged_root is not None:
+            self._pending_update = (dialog.staged_root, dialog.staged_version)
+            self.updateReady.emit()
+
+    def take_pending_update(self):
+        pending, self._pending_update = self._pending_update, None
+        return pending
 
     # =========================
     # FOLDER PICKER
@@ -452,16 +489,6 @@ class _ConfigDialog(QDialog):
         ("field_audio_bitrate", "default_audio_bitrate", "field_audio_bitrate_desc"),
     ]
 
-    @staticmethod
-    def _make_help_button(callback) -> QToolButton:
-        btn = QToolButton()
-        btn.setText("?")
-        btn.setFixedSize(24, 24)
-        btn.setAutoRaise(True)
-        btn.setStyleSheet(HELP_BUTTON_STYLE)
-        btn.clicked.connect(callback)
-        return btn
-
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle(tr("settings_title"))
@@ -515,7 +542,7 @@ class _ConfigDialog(QDialog):
 
             self._inputs[key] = widget
 
-            btn_help = self._make_help_button(
+            btn_help = make_help_button(
                 lambda _=False, t=label, d=desc: _HelpDialog(t, d, self).exec()
             )
 

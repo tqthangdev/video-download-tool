@@ -108,6 +108,8 @@ Both scripts install the dependencies, package the app with PyInstaller into `di
 
 Prebuilt standalone builds (Windows / Linux) are published on [GitHub Releases](https://github.com/tqthangdev/video-download-tool/releases) — no Python installation required. Pushing a `v*` tag triggers the CI build.
 
+The app can check for a newer release itself: the `?` next to the version in the sidebar opens the version dialog, which compares against the latest GitHub release and, on request, downloads and installs it (the app restarts into the new build).
+
 ## Disclaimer
 
 Intended for personal use. Respect the terms of service, copyright and rate limits of the sites you use, and only download content you are allowed to. The tool is a graphical front-end for yt-dlp, which does the actual extraction — it does not bypass DRM, and it cannot download from services that yt-dlp does not support.

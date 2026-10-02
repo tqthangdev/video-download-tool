@@ -196,21 +196,6 @@ QProgressBar::chunk {
 }
 """
 
-# "?" icon button opening an option's help dialog (config dialog).
-HELP_BUTTON_STYLE = """
-QToolButton {
-    color: #e0e0e0;
-    border: none;
-    background: transparent;
-}
-QToolButton:hover {
-    color: #4CAF50;
-    font-weight: bold;
-    border: none;
-    background: transparent;
-}
-"""
-
 # Input fields of the settings dialog (config.json editor).
 CONFIG_DIALOG_STYLE = _resolve_assets("""
 QLineEdit, QSpinBox, QComboBox {
@@ -325,5 +310,29 @@ QLineEdit {
 QLineEdit:focus {
     border: 2px solid #4CAF50;
     background-color: #333333;
+}
+"""
+
+# Read-only text area (release notes in the version dialog): dark background
+# with a light border so it reads as an input, same palette as the app.
+TEXT_AREA_STYLE = """
+QTextEdit {
+    background-color: #1e1e1e;
+    border: 1px solid #ffffff;
+    border-radius: 0px;
+    padding: 4px 6px;
+    color: #e0e0e0;
+}
+"""
+
+# Borderless, transparent button used for secondary actions that should not
+# look like the regular push buttons: the "?" help buttons (icon swapped on
+# hover by gui.widgets.make_help_button) and the "What's new" toggle.
+OUTLINE_BUTTON_STYLE = """
+QToolButton,
+QToolButton:hover {
+    color: #e0e0e0;
+    border: none;
+    background: transparent;
 }
 """
