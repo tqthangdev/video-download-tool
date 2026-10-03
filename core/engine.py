@@ -24,9 +24,11 @@ from core.job_manager import (
     JobManager,
 )
 from core.logger import logger
+from core.network.manager import NetworkManager
 from core.sessions import SessionStore, delete_session_files, session_db_path
 from core.utils import (
     CONFIG,
+    DATA_DIR,
     cleanup_orphan_temp_dirs,
     remove_job_temp_dir,
     remove_session_temp_dirs,
@@ -54,6 +56,12 @@ class Engine(QObject):
         self.session_id = session.id
         self.db = JobManager(session_db_path(session.id))
 
+        # Local network fallback (core.network): a per-hostname direct/frag
+        # proxy. Started by run.py at launch; yt-dlp/ffmpeg go through it.
+        self.network = NetworkManager(
+            enabled=bool(self.config.get("network_enabled", True)),
+            routing_path=DATA_DIR / "network.json",
+        )
         self.client = YtdlpClient(self.config)
         self.downloader = Downloader(self.client)
 
@@ -67,6 +75,25 @@ class Engine(QObject):
 
     def ffmpeg_available(self) -> bool:
         return ffmpeg_available()
+
+    # ------------------------------------------------------------------
+    # NETWORK FALLBACK
+    # ------------------------------------------------------------------
+    def start_network(self) -> None:
+        """Start the local fallback proxy (no-op when disabled)."""
+        if self.network.start():
+            self.client.set_proxy(self.network.proxy_url)
+        else:
+            self.client.set_proxy(None)
+
+    def stop_network(self) -> None:
+        self.network.stop()
+        self.client.set_proxy(None)
+
+    def apply_network_settings(self) -> None:
+        """Re-read the config after the Settings dialog changed it."""
+        self.network.set_enabled(bool(self.config.get("network_enabled", True)))
+        self.client.set_proxy(self.network.proxy_url if self.network.running else None)
 
     # ------------------------------------------------------------------
     # QUEUE MANAGEMENT

@@ -134,8 +134,19 @@ class DownloadResult:
 class YtdlpClient:
     """Thin, blocking wrapper around yt_dlp.YoutubeDL."""
 
-    def __init__(self, config: dict):
+    def __init__(self, config: dict, proxy_url: str | None = None):
         self.config = config
+        # Local fallback proxy (core.network); empty when the fallback is off.
+        self.proxy_url = proxy_url or None
+
+    def set_proxy(self, proxy_url: str | None) -> None:
+        """Point yt-dlp/requests at the local proxy (or None for direct)."""
+        self.proxy_url = proxy_url or None
+
+    def _requests_proxies(self) -> dict | None:
+        if not self.proxy_url:
+            return None
+        return {"http": self.proxy_url, "https": self.proxy_url}
 
     # ------------------------------------------------------------------
     # OPTIONS
@@ -167,6 +178,8 @@ class YtdlpClient:
             "continuedl": True,
             "nopart": False,
         }
+        if self.proxy_url:
+            opts["proxy"] = self.proxy_url
         opts.update(self._cookies_opts())
         if extra:
             opts.update(extra)
@@ -250,6 +263,7 @@ class YtdlpClient:
                 headers={"User-Agent": _BROWSER_UA, "Referer": url},
                 timeout=int(self.config.get("request_timeout", 30)),
                 allow_redirects=True,
+                proxies=self._requests_proxies(),
             )
             response.raise_for_status()
         except Exception as exc:
@@ -372,6 +386,7 @@ class YtdlpClient:
                 },
                 data=b"",
                 timeout=int(self.config.get("request_timeout", 30)),
+                proxies=self._requests_proxies(),
             )
             response.raise_for_status()
             payload = response.json()

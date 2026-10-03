@@ -136,6 +136,13 @@ TRANSLATIONS = {
         "update_ready": "Đã sẵn sàng. Ứng dụng sẽ đóng rồi khởi động lại bằng bản mới.",
         "update_failed": "Cập nhật thất bại: {error}",
         "update_no_package": "Bản phát hành này không có gói cho hệ điều hành của bạn.",
+        # Network
+        "network_label": "Mạng",
+        "network_fallback": "Tự động chuyển mạng khi bị chặn",
+        "network_learned": "Host đã học",
+        "network_clear": "Xóa host đã học",
+        "network_empty": "Chưa có host nào.",
+        "network_expires": "hết hạn {date}",
     },
     "en": {
         # Common
@@ -272,6 +279,13 @@ TRANSLATIONS = {
         "update_ready": "Ready. The app will close and restart with the new version.",
         "update_failed": "Update failed: {error}",
         "update_no_package": "This release has no package for your platform.",
+        # Network
+        "network_label": "Network",
+        "network_fallback": "Automatic network fallback",
+        "network_learned": "Learned hosts",
+        "network_clear": "Clear learned hosts",
+        "network_empty": "No hosts learned yet.",
+        "network_expires": "expires {date}",
     },
 }
 

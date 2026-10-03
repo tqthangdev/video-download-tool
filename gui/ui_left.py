@@ -14,6 +14,8 @@ from PyQt6.QtWidgets import (
     QComboBox,
     QStackedWidget,
     QFrame,
+    QListWidget,
+    QAbstractItemView,
 )
 from PyQt6.QtCore import Qt, QSettings, pyqtSignal
 
@@ -64,12 +66,16 @@ class LeftPanel(QWidget):
 
     # Emitted when a newer build has been staged and the app should restart.
     updateReady = pyqtSignal()
+    # Emitted after the Settings dialog closes (network toggle may have changed).
+    networkSettingsChanged = pyqtSignal()
 
     def __init__(self, settings: QSettings, parent=None):
         super().__init__(parent)
 
         self.settings = settings
         self._pending_update = None
+        # Set by MainWindow so the Settings dialog can show learned hosts.
+        self.network_manager = None
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         self.init_ui()
 
@@ -388,7 +394,8 @@ class LeftPanel(QWidget):
         self.preview.retranslate()
 
     def open_settings(self):
-        _ConfigDialog(self).exec()
+        _ConfigDialog(self, self.network_manager).exec()
+        self.networkSettingsChanged.emit()
 
     def open_about(self):
         _AboutDialog(self).exec()
@@ -489,13 +496,14 @@ class _ConfigDialog(QDialog):
         ("field_audio_bitrate", "default_audio_bitrate", "field_audio_bitrate_desc"),
     ]
 
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, network=None):
         super().__init__(parent)
         self.setWindowTitle(tr("settings_title"))
         self.setModal(True)
         self.setMinimumWidth(520)
         self.setStyleSheet(CONFIG_DIALOG_STYLE)
 
+        self.network = network
         self._inputs = {}
 
         layout = QVBoxLayout(self)
@@ -558,6 +566,27 @@ class _ConfigDialog(QDialog):
 
         layout.addLayout(form)
 
+        # ===== NETWORK (automatic fallback) =====
+        self.network_cb = None
+        if self.network is not None:
+            layout.addWidget(QLabel(tr("network_label")))
+            self.network_cb = make_checkbox(tr("network_fallback"))
+            self.network_cb.setChecked(bool(CONFIG.get("network_enabled", True)))
+            layout.addWidget(self.network_cb, 0, Qt.AlignmentFlag.AlignLeft)
+
+            layout.addWidget(QLabel(tr("network_learned")))
+            self.network_list = QListWidget()
+            self.network_list.setFixedHeight(72)
+            self.network_list.setSelectionMode(
+                QAbstractItemView.SelectionMode.NoSelection
+            )
+            layout.addWidget(self.network_list)
+
+            self.btn_clear_network = QPushButton(tr("network_clear"))
+            self.btn_clear_network.clicked.connect(self._clear_network)
+            layout.addWidget(self.btn_clear_network, 0, Qt.AlignmentFlag.AlignLeft)
+            self._refresh_network_list()
+
         buttons = QDialogButtonBox()
         btn_apply = buttons.addButton(tr("apply"), QDialogButtonBox.ButtonRole.AcceptRole)
         btn_cancel = buttons.addButton(tr("cancel"), QDialogButtonBox.ButtonRole.RejectRole)
@@ -567,6 +596,24 @@ class _ConfigDialog(QDialog):
 
         apply_pointer_cursors(self)
         self.setFocus()
+
+    def _refresh_network_list(self):
+        self.network_list.clear()
+        hosts = self.network.learned_hosts() if self.network else {}
+        if not hosts:
+            self.network_list.addItem(tr("network_empty"))
+            return
+        for host, route in sorted(hosts.items()):
+            expires = (route.expires_at or "")[:10]
+            self.network_list.addItem(
+                f"{host}   {route.transport}/{route.strategy or '-'}   "
+                f"{tr('network_expires').format(date=expires)}"
+            )
+
+    def _clear_network(self):
+        if self.network is not None:
+            self.network.clear_learned()
+            self._refresh_network_list()
 
     def _on_apply(self):
         new_config = dict(CONFIG)
@@ -579,6 +626,8 @@ class _ConfigDialog(QDialog):
                     new_config[key] = text
 
         new_config["language"] = self.cb_lang.currentData()
+        if self.network_cb is not None:
+            new_config["network_enabled"] = self.network_cb.isChecked()
 
         if save_config(new_config):
             CONFIG.clear()

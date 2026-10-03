@@ -113,22 +113,33 @@ def normalize_formats(raw_formats) -> list[VideoFormat]:
         has_video = vcodec not in (None, "none")
         has_audio = acodec not in (None, "none")
 
-        # HLS/DASH manifests often leave the codecs unspecified. Rather than
-        # discarding a perfectly playable stream, infer what it carries: a
-        # format with a picture size (or a video container) is a muxed
-        # audio+video stream, otherwise fall back to the audio extensions.
-        if vcodec is None and acodec is None:
-            ext = (raw.get("ext") or "").lower()
-            has_size = bool(raw.get("height") or raw.get("width") or raw.get("resolution"))
-            if has_size or ext in ("mp4", "ts", "webm", "flv", "mkv"):
-                vcodec = acodec = UNKNOWN_CODEC
-                has_video = has_audio = True
-            elif ext in AUDIO_ONLY_EXTS or raw.get("abr"):
-                acodec = UNKNOWN_CODEC
-                has_audio = True
-            else:
+        # yt-dlp uses None for "codec not declared" and the string "none" for
+        # "this stream carries no such track". HLS/DASH manifests and the
+        # generic page scanner often leave one side undeclared, so infer what
+        # that side carries from the container/size instead of dropping the
+        # whole format (a track is only dropped when it is explicitly absent).
+        ext = (raw.get("ext") or "").lower()
+        has_size = bool(raw.get("height") or raw.get("width") or raw.get("resolution"))
+        video_undeclared = vcodec is None
+        audio_undeclared = acodec is None
+
+        if video_undeclared and (audio_undeclared or acodec == "none"):
+            # No declared video codec: assume a picture unless it is audio-only.
+            if not (ext in AUDIO_ONLY_EXTS or raw.get("abr")):
                 vcodec = UNKNOWN_CODEC
                 has_video = True
+
+        if audio_undeclared and (video_undeclared or vcodec == "none"):
+            # No declared audio codec: present for muxed/video containers and
+            # for audio-only extensions.
+            if (
+                has_size
+                or ext in ("mp4", "ts", "webm", "flv", "mkv")
+                or ext in AUDIO_ONLY_EXTS
+                or raw.get("abr")
+            ):
+                acodec = UNKNOWN_CODEC
+                has_audio = True
 
         # Drop anything that carries neither video nor audio.
         if not has_video and not has_audio:

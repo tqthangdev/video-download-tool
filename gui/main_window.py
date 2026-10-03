@@ -69,6 +69,7 @@ class MainWindow(QWidget):
         layout = QHBoxLayout()
 
         self.left = LeftPanel(self.settings)
+        self.left.network_manager = self.engine.network
         self.right = RightPanel()
 
         layout.addWidget(self.left, 3)
@@ -80,6 +81,7 @@ class MainWindow(QWidget):
         self.left.btn_session.clicked.connect(self.open_sessions)
         self.left.auto_mp3_cb.toggled.connect(self._on_auto_mp3_toggled)
         self.left.updateReady.connect(self._on_update_ready)
+        self.left.networkSettingsChanged.connect(self._on_network_settings_changed)
 
         self.right.btn_start.clicked.connect(self.start_engine)
         self.right.btn_resume.clicked.connect(self.toggle_resume_engine)
@@ -661,6 +663,13 @@ class MainWindow(QWidget):
         except Exception:
             logger.exception("Failed to shut down the system")
             self._show_message(tr("error"), tr("shutdown_failed"), critical=True)
+
+    # =========================
+    # NETWORK FALLBACK SETTINGS
+    # =========================
+    def _on_network_settings_changed(self):
+        """The Settings dialog may have toggled the fallback; apply it now."""
+        self.engine.apply_network_settings()
 
     # =========================
     # APPLY A STAGED UPDATE

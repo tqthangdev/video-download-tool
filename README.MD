@@ -74,6 +74,7 @@ Both launchers install the dependencies automatically if they are missing. Or ru
 | `default_video_quality` | yes | Quality pre-selected in the preview and for batch import (e.g. `720p`) |
 | `default_audio_bitrate` | yes | MP3 bitrate pre-selected in the preview and used by **Auto convert to mp3** |
 | `language` | yes | UI language (`vi` / `en`) |
+| `network_enabled` | yes | Automatic per-host network fallback (see below) |
 | `default_audio_bitrates` | no | Bitrates offered in the MP3 group |
 | `request_timeout` | no | Per-request timeout, seconds |
 | `download_retry` | no | Retries for failed requests |
@@ -83,6 +84,10 @@ Both launchers install the dependencies automatically if they are missing. Or ru
 Keys the app no longer knows about are dropped the next time the file is written. Authentication for sites that need it is left to yt-dlp: point `cookies_file` at an exported `cookies.txt`, or let `cookies_from_browser` read them straight from your browser.
 
 The sidebar toggles — **Auto add queue**, **Auto convert to mp3**, **Shutdown when done** — and the last save folder are kept in the app's own settings (`QSettings`), next to `config.json`, not in it. Sessions live in `data/sessions.json`: the registry maps each session's id to its name and remembers the current one, so a restart asks to restore only that session.
+
+### Network fallback
+
+The app runs a small local CONNECT proxy (`core/network`) that yt-dlp and ffmpeg go through. On a hostname whose TLS handshake is silently dropped (a filter that lets TCP connect but never answers), the proxy retries the first flight split into two TLS records (`frag`) instead of sending the ClientHello whole; hosts that already work keep going `direct`. The choice is decided per hostname, learned from the traffic itself (never parsed from yt-dlp output), and remembered for 7 days in `data/network.json`; it is not applied to application errors (404, private video, login required). Turn it off with **Automatic network fallback** in Settings, and clear the learned hosts there too.
 
 Output files are named after the video title (`<title>.mp4` / `<title>.mp3`). Titles longer than the filesystem limit are truncated safely, and spam links embedded in titles are stripped. While a job is running its data stays in `<output>/.temp/<session>/<job_id>/` and is moved into the output folder once complete, so partially downloaded files never appear there; scratch folders left by removed jobs are cleaned up on the next launch.
 
@@ -109,6 +114,8 @@ Both scripts install the dependencies, package the app with PyInstaller into `di
 Prebuilt standalone builds (Windows / Linux) are published on [GitHub Releases](https://github.com/tqthangdev/video-download-tool/releases) — no Python installation required. Pushing a `v*` tag triggers the CI build.
 
 The app can check for a newer release itself: the `?` next to the version in the sidebar opens the version dialog, which compares against the latest GitHub release and, on request, downloads and installs it (the app restarts into the new build).
+
+Versions follow `1.x.y`: **x** is bumped for feature releases, **y** for fixes (UI, permissions, bugs).
 
 ## Disclaimer
 

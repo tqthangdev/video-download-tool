@@ -92,6 +92,7 @@ DEFAULT_CONFIG = {
     "download_retry": 3,
     "cookies_file": "",
     "cookies_from_browser": "",
+    "network_enabled": True,
 }
 
 

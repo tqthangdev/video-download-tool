@@ -40,12 +40,16 @@ def main():
     loop.set_default_executor(ThreadPoolExecutor(max_workers=max_workers + 8))
 
     engine = Engine(max_workers=max_workers, config=CONFIG)
+    engine.start_network()
     window = MainWindow(engine)
 
     window.show()
 
-    with loop:
-        loop.run_forever()
+    try:
+        with loop:
+            loop.run_forever()
+    finally:
+        engine.stop_network()
 
 
 if __name__ == "__main__":
