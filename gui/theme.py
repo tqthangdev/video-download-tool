@@ -174,18 +174,18 @@ QWidget#preview_meta, QWidget#preview_formats {
 }
 """
 
-# Queue list in the right panel: transparent background + thin border.
+# Queue list in the right panel: transparent background + thin white border.
 QUEUE_LIST_STYLE = """
 QWidget#queue_list {
     background: transparent;
-    border: 1px solid #adadad;
+    border: 1px solid #ffffff;
 }
 """ + SCROLLBAR_STYLE
 
-# Indeterminate progress bar (restore dialog).
+# Progress bar (restore / add-jobs / update dialogs).
 PROGRESS_STYLE = """
 QProgressBar {
-    border: 1px solid #3a3a3a;
+    border: 1px solid #555555;
     border-radius: 4px;
     background-color: #1e1e1e;
 }
@@ -282,6 +282,20 @@ QComboBox QAbstractItemView {
 MANGA_TITLE_STYLE = "font-size:16px; font-weight:bold; color:#ff9800;"
 HELP_TITLE_STYLE = "font-size:14px; font-weight:bold; color:#ff9800;"
 
+# "LIVE" badge in the preview, next to a live stream's metadata.
+LIVE_BADGE_STYLE = "font-size:12px; font-weight:bold; color:#ff3b30;"
+
+# Generic list box (QListWidget) used across the dialogs: white border like the
+# other inputs, dark background and the shared thin scrollbar.
+LIST_STYLE = """
+QListWidget {
+    background-color: #1e1e1e;
+    border: 1px solid #ffffff;
+    border-radius: 0px;
+    color: #e0e0e0;
+}
+""" + SCROLLBAR_STYLE
+
 # Video preview: metadata text and format group headers.
 PREVIEW_META_STYLE = "color:#9e9e9e; font-size:12px;"
 FORMAT_GROUP_STYLE = "color:#00e5ff; font-size:13px; font-weight:bold; margin-top:4px;"
@@ -323,7 +337,7 @@ QTextEdit {
     padding: 4px 6px;
     color: #e0e0e0;
 }
-"""
+""" + SCROLLBAR_STYLE
 
 # Borderless, transparent button used for secondary actions that should not
 # look like the regular push buttons: the "?" help buttons (icon swapped on

@@ -15,6 +15,7 @@ from gui.ui_left import LeftPanel
 from gui.ui_right import RightPanel
 from gui.restore_dialog import RestoreDialog
 from gui.session_dialog import SessionDialog
+from gui.import_result_dialog import ImportResultDialog
 from gui.cursor_utils import apply_pointer_cursors
 from gui.theme import MAIN_WINDOW_STYLE
 from gui.video_preview import fetch_thumbnail_bytes
@@ -232,7 +233,9 @@ class MainWindow(QWidget):
         self.left.on_loading(False)
         self.left._update_add_button()
 
-        if not choices:
+        if info.is_live:
+            self._show_message(tr("notify"), tr("live_unsupported"))
+        elif not choices:
             self._show_message(tr("notify"), tr("no_formats"))
 
     def _preview_default_choice(self):
@@ -266,6 +269,11 @@ class MainWindow(QWidget):
     async def add_queue(self):
         if self.left.rb_auto.isChecked():
             await self.add_jobs_from_file(self.left.file_input.text().strip())
+            return
+
+        # A live stream has no end to download to yet.
+        if self._video_info is not None and self._video_info.is_live:
+            self._show_message(tr("notify"), tr("live_unsupported"))
             return
 
         url = self.left.url_input.text().strip()
@@ -340,7 +348,9 @@ class MainWindow(QWidget):
         db_lock = asyncio.Lock()
         ffmpeg = self.engine.ffmpeg_available()
         auto_mp3 = self.left.auto_mp3_cb.isChecked()
-        state = {"completed": 0, "added": 0}
+        reason_extract = tr("import_reason_extract")
+        reason_no_format = tr("import_reason_no_format")
+        state = {"completed": 0, "success": [], "live": [], "duplicate": [], "error": []}
 
         async def process(url):
             try:
@@ -348,6 +358,12 @@ class MainWindow(QWidget):
                     info = await loop.run_in_executor(None, self.engine.client.extract, url)
             except Exception as exc:
                 logger.error(f"[add_from_file] Skipped {url}: {exc}")
+                info = None
+                state["error"].append({"title": "", "url": url, "reason": reason_extract})
+
+            if info is not None and info.is_live:
+                # Live streams are recognized but not downloadable yet.
+                state["live"].append({"title": info.title, "url": url})
                 info = None
 
             if info is not None:
@@ -358,7 +374,11 @@ class MainWindow(QWidget):
                 choice = select_default_format(choices, self.engine.config)
                 if auto_mp3:
                     choice = select_audio_format(choices, self.engine.config) or choice
-                if choice is not None:
+                if choice is None:
+                    state["error"].append(
+                        {"title": info.title, "url": url, "reason": reason_no_format}
+                    )
+                else:
                     job = Job(
                         url=url,
                         title=info.title,
@@ -372,7 +392,9 @@ class MainWindow(QWidget):
                         status = "Waiting" if self.engine.running else ""
                         if result in ("queued", "resume"):
                             self.right.update_queue_item(job, status)
-                            state["added"] += 1
+                            state["success"].append({"title": info.title, "url": url})
+                        else:
+                            state["duplicate"].append({"title": info.title, "url": url})
 
             state["completed"] += 1
             modal.set_progress(state["completed"], len(links))
@@ -386,7 +408,8 @@ class MainWindow(QWidget):
             modal.deleteLater()
 
         self._update_buttons()
-        self._show_message(tr("notify"), tr("adding_jobs_done").format(added=state["added"]))
+        result = {"file": Path(path).name, "total": len(links), **state}
+        ImportResultDialog(result, self).exec()
 
     # =========================
     # NON-MODAL MESSAGE BOX

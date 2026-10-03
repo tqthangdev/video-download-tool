@@ -25,8 +25,10 @@ from core.utils import get_resource_path
 from gui.theme import (
     CHAPTER_PANEL_STYLE,
     FORMAT_GROUP_STYLE,
+    LIVE_BADGE_STYLE,
     MANGA_TITLE_STYLE,
     PREVIEW_META_STYLE,
+    SCROLLBAR_STYLE,
 )
 from gui.widgets import make_radio_button
 
@@ -59,6 +61,7 @@ class VideoPreview(QWidget):
 
         self._choices: list[FormatChoice] = []
         self._buttons: dict[str, object] = {}
+        self._is_live = False
         self._group = QButtonGroup(self)
         self._group.setExclusive(True)
         self._group.buttonToggled.connect(self._on_toggled)
@@ -104,10 +107,14 @@ class VideoPreview(QWidget):
         line1.addWidget(self.title_label, 1)
 
         line2 = QHBoxLayout()
+        self.live_label = QLabel(tr("live_badge"))
+        self.live_label.setStyleSheet(LIVE_BADGE_STYLE)
+        self.live_label.setVisible(False)
         self.uploader_label = QLabel("")
         self.uploader_label.setStyleSheet(PREVIEW_META_STYLE)
         self.duration_label = QLabel("")
         self.duration_label.setStyleSheet(PREVIEW_META_STYLE)
+        line2.addWidget(self.live_label)
         line2.addWidget(self.uploader_label)
         line2.addStretch()
         line2.addWidget(self.duration_label)
@@ -140,6 +147,7 @@ class VideoPreview(QWidget):
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.Shape.NoFrame)
+        scroll.setStyleSheet(SCROLLBAR_STYLE)
         scroll.setWidget(self.radio_host)
 
         self.empty_label = QLabel(tr("no_formats"))
@@ -203,6 +211,9 @@ class VideoPreview(QWidget):
 
     def set_video(self, video_info, choices: list[FormatChoice], default=None, thumbnail=None):
         self.title_label.setText(video_info.title or "")
+
+        self._is_live = bool(getattr(video_info, "is_live", False))
+        self.live_label.setVisible(self._is_live)
 
         duration = format_duration(video_info.duration)
         self.duration_label.setText(
@@ -268,10 +279,16 @@ class VideoPreview(QWidget):
         except (TypeError, ValueError, IndexError):
             return None
 
+    def is_live(self) -> bool:
+        """True when the previewed URL is a stream that is broadcasting now."""
+        return self._is_live
+
     def clear(self):
         self.title_label.clear()
         self.duration_label.clear()
         self.uploader_label.clear()
+        self.live_label.setVisible(False)
+        self._is_live = False
         self.thumb.clear()
         self._choices = []
         self._clear_radios()
@@ -282,6 +299,7 @@ class VideoPreview(QWidget):
         self.formats_header.setText(tr("formats_label"))
         self.empty_label.setText(tr("no_formats"))
         self.loading_text.setText(tr("loading_preview"))
+        self.live_label.setText(tr("live_badge"))
 
     # ------------------------------------------------------------------
     # INTERNALS

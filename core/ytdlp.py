@@ -510,6 +510,9 @@ class YtdlpClient:
         raw_title = info.get("title") or ""
         title = clean_title(raw_title) or raw_title or url
 
+        live_status = info.get("live_status")
+        is_live = bool(info.get("is_live")) or live_status == "is_live"
+
         return VideoInfo(
             url=url,
             title=title,
@@ -519,6 +522,8 @@ class YtdlpClient:
             webpage_url=info.get("webpage_url") or url,
             extractor=info.get("extractor_key") or info.get("extractor"),
             formats=normalize_formats(info.get("formats") or []),
+            is_live=is_live,
+            live_status=live_status,
         )
 
     # ------------------------------------------------------------------

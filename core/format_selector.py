@@ -67,6 +67,10 @@ class VideoInfo:
     # Set when the formats were discovered by scanning the page ourselves
     # instead of by an extractor: the media URL they were read from.
     source_url: Optional[str] = None
+    # A stream that is broadcasting right now cannot be downloaded as a file
+    # yet; the UI uses this to warn and refuse the job.
+    is_live: bool = False
+    live_status: Optional[str] = None
 
 
 @dataclass
