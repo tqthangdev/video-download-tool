@@ -165,6 +165,15 @@ jobs:
 
     steps:
       # ==========================================
+      # CHECKOUT (full history: release notes come from the commit log)
+      # ==========================================
+
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # ==========================================
       # DOWNLOAD BUILDS
       # ==========================================
 
@@ -196,6 +205,28 @@ jobs:
           test -f release/VideoDownloadTool-windows.zip
 
       # ==========================================
+      # BUILD RELEASE NOTES (from the commit log)
+      # ==========================================
+
+      - name: Build release notes
+        shell: bash
+        run: |
+          set -e
+
+          tag="${GITHUB_REF_NAME}"
+          previous="$(git describe --tags --abbrev=0 "${tag}^" 2>/dev/null || true)"
+          range="${previous:+${previous}..}${tag}"
+
+          {
+            echo "## What's new"
+            echo
+            git log --no-merges --pretty='- %s' "${range}" 2>/dev/null || true
+          } > release-notes.md
+
+          echo "=== release-notes.md ==="
+          cat release-notes.md
+
+      # ==========================================
       # CREATE GITHUB RELEASE
       # ==========================================
 
@@ -205,4 +236,4 @@ jobs:
           files: |
             release/VideoDownloadTool-linux.zip
             release/VideoDownloadTool-windows.zip
-          generate_release_notes: true
+          body_path: release-notes.md

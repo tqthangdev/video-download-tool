@@ -41,6 +41,24 @@ def _cleanup(path: Path) -> None:
     shutil.rmtree(path, ignore_errors=True)
 
 
+def _restore_permissions(archive: zipfile.ZipFile, root: Path) -> None:
+    """Give extracted files back the Unix mode stored in the zip.
+
+    `ZipFile.extractall` does not restore the permission bits, so the packaged
+    executable came out as 0644 and could not be launched (PermissionError).
+    """
+    if os.name == "nt":
+        return
+    for info in archive.infolist():
+        mode = (info.external_attr >> 16) & 0o7777
+        if not mode:
+            continue
+        try:
+            os.chmod(root / info.filename, mode)
+        except OSError:
+            pass
+
+
 def cleanup_staging() -> None:
     """Remove the staging area left by a finished update (best-effort).
 
@@ -89,6 +107,7 @@ def prepare_update(
             if broken:
                 raise InstallError(f"corrupt archive ({broken})")
             archive.extractall(extracted)
+            _restore_permissions(archive, extracted)
     except zipfile.BadZipFile as e:
         _cleanup(stage)
         raise InstallError("invalid zip archive") from e
@@ -119,6 +138,12 @@ def _updater_launcher(source: Path):
     exe_name = "VideoDownloadTool.exe" if os.name == "nt" else "VideoDownloadTool"
     packaged = source / exe_name
     if packaged.is_file():
+        # Older staging runs may have extracted it without the executable bit.
+        if os.name != "nt" and not os.access(packaged, os.X_OK):
+            try:
+                os.chmod(packaged, 0o755)
+            except OSError:
+                pass
         return [str(packaged)]
 
     return [sys.executable, str(Path(sys.argv[0]).resolve())]

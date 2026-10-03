@@ -8,6 +8,7 @@ qasync event loop.
 
 from __future__ import annotations
 
+import re
 import threading
 from pathlib import Path
 
@@ -43,6 +44,19 @@ def display_version(version: str) -> str:
 
 NOTES_ARROW_DOWN = "\u25bc"  # ▼ collapsed
 NOTES_ARROW_UP = "\u25b2"    # ▲ expanded
+
+# GitHub appends this comparison link to auto-generated release notes; it is
+# noise in the dialog, so it is dropped before the notes are shown.
+_FULL_CHANGELOG_RE = re.compile(
+    r"^\s*\*{0,2}\s*Full Changelog\s*\*{0,2}\s*:.*$", re.IGNORECASE | re.MULTILINE
+)
+
+
+def clean_notes(text: str) -> str:
+    """Strip the boilerplate GitHub adds to auto-generated release notes."""
+    cleaned = _FULL_CHANGELOG_RE.sub("", text or "")
+    cleaned = re.sub(r"\n{3,}", "\n\n", cleaned)
+    return cleaned.strip()
 
 
 # Buttons shown in each dialog state.
@@ -180,6 +194,7 @@ class VersionDialog(QDialog):
     # RELEASE NOTES (collapse / expand)
     # =========================
     def _set_notes(self, notes: str):
+        notes = clean_notes(notes)
         self._notes = notes
         if not notes:
             self._reset_notes()
