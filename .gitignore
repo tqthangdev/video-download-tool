@@ -33,6 +33,9 @@ python/
 .coverage
 htmlcov/
 
+# Local test suite (run manually; not tracked or shipped)
+tests/
+
 # ==============================
 
 # Runtime / Application Data
