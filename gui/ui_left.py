@@ -16,9 +16,9 @@ from PyQt6.QtCore import Qt, QSettings, pyqtSignal
 from core.utils import CONFIG
 from core.i18n import tr
 from core.updater.version import read_current_version
-from gui.about_dialog import AboutDialog
-from gui.setting_dialog import SettingDialog
-from gui.version_dialog import VersionDialog, display_version
+from gui.dialogs.about_dialog import AboutDialog
+from gui.dialogs.setting_dialog import SettingDialog
+from gui.dialogs.version_dialog import VersionDialog, display_version
 from gui.theme import COMPACT_INPUT_STYLE, PREVIEW_META_STYLE
 from gui.video_preview import VideoPreview
 from gui.widgets import make_checkbox, make_help_button, make_radio_button

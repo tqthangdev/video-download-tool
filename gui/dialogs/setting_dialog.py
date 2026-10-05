@@ -22,7 +22,7 @@ from PyQt6.QtWidgets import (
 from core.i18n import get_lang, set_lang, tr
 from core.utils import CONFIG, save_config
 from gui.cursor_utils import apply_pointer_cursors
-from gui.help_dialog import HelpDialog
+from gui.dialogs.help_dialog import HelpDialog
 from gui.theme import CONFIG_DIALOG_STYLE, LIST_STYLE
 from gui.widgets import make_checkbox, make_help_button
 

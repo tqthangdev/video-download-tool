@@ -13,9 +13,9 @@ from PyQt6.QtCore import QSettings, QTimer, Qt, QEvent
 
 from gui.ui_left import LeftPanel
 from gui.ui_right import RightPanel
-from gui.restore_dialog import RestoreDialog
-from gui.session_dialog import SessionDialog
-from gui.import_result_dialog import ImportResultDialog
+from gui.dialogs.restore_dialog import RestoreDialog
+from gui.dialogs.session_dialog import SessionDialog
+from gui.dialogs.import_result_dialog import ImportResultDialog
 from gui.cursor_utils import apply_pointer_cursors
 from gui.theme import MAIN_WINDOW_STYLE
 from gui.video_preview import fetch_thumbnail_bytes
@@ -336,7 +336,7 @@ class MainWindow(QWidget):
             self._show_message(tr("import_error_title"), message, critical=True)
             return
 
-        from gui.add_jobs_dialog import AddJobsDialog
+        from gui.dialogs.add_jobs_dialog import AddJobsDialog
 
         modal = AddJobsDialog(self)
         modal.set_progress(0, len(links))
