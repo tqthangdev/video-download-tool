@@ -221,6 +221,16 @@ class MainWindow(QWidget):
             ffmpeg_available=self.engine.ffmpeg_available(),
             source_url=info.source_url,
         )
+
+        if info.is_live:
+            self.left.on_loading(False)
+            self._show_message(tr("notify"), tr("live_unsupported"))
+            return
+        elif not choices:
+            self.left.on_loading(False)
+            self._show_message(tr("notify"), tr("no_formats"))
+            return
+
         self._choices = choices
         self._video_info = info
         default = self._preview_default_choice()
@@ -232,11 +242,6 @@ class MainWindow(QWidget):
         self.left.preview.set_video(info, choices, default=default, thumbnail=thumbnail)
         self.left.on_loading(False)
         self.left._update_add_button()
-
-        if info.is_live:
-            self._show_message(tr("notify"), tr("live_unsupported"))
-        elif not choices:
-            self._show_message(tr("notify"), tr("no_formats"))
 
     def _preview_default_choice(self):
         """Default radio selection, honouring "Auto convert to mp3"."""
@@ -269,11 +274,6 @@ class MainWindow(QWidget):
     async def add_queue(self):
         if self.left.rb_auto.isChecked():
             await self.add_jobs_from_file(self.left.file_input.text().strip())
-            return
-
-        # A live stream has no end to download to yet.
-        if self._video_info is not None and self._video_info.is_live:
-            self._show_message(tr("notify"), tr("live_unsupported"))
             return
 
         url = self.left.url_input.text().strip()
