@@ -4,6 +4,11 @@ A desktop video/audio downloader built on **yt-dlp**. Paste a link, preview the 
 
 The GUI is PyQt6; yt-dlp does the extraction and downloading. The application itself only handles the queue, persistence, format presentation and orchestration — it does not implement site-specific scraping.
 
+
+## Release
+
+Prebuilt standalone builds (Windows / Linux) are published on [GitHub Releases](https://github.com/tqthangdev/video-download-tool/releases) — no Python installation required. Pushing a `v*` tag triggers the CI build.
+
 ## Features
 
 - **Preview before download** — title, thumbnail, duration and every available format for the URL.
@@ -109,13 +114,6 @@ chmod +x build.sh
 
 Both scripts install the dependencies, package the app with PyInstaller into `dist/VideoDownloadTool/`, and remove temporary files.
 
-## Release
-
-Prebuilt standalone builds (Windows / Linux) are published on [GitHub Releases](https://github.com/tqthangdev/video-download-tool/releases) — no Python installation required. Pushing a `v*` tag triggers the CI build.
-
-The app can check for a newer release itself: the `?` next to the version in the sidebar opens the version dialog, which compares against the latest GitHub release and, on request, downloads and installs it (the app restarts into the new build).
-
-Versions follow `1.x.y`: **x** is bumped for feature releases, **y** for fixes (UI, permissions, bugs).
 
 ## Disclaimer
 
