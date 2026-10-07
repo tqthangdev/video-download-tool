@@ -157,7 +157,7 @@ TRANSLATIONS = {
         # Common
         "app_title": "Video Download Tool",
         "paste": "Paste",
-        "folder": "Folder",
+        "folder": "Browser",
         "settings": "Settings",
         "mode": "Mode:",
         "mode_manual": "Manual",
@@ -228,7 +228,7 @@ TRANSLATIONS = {
         "url_placeholder": "Paste video link...",
         "path_placeholder": "Save path...",
         "file_placeholder": "Choose a file containing a list of links...",
-        "file_pick": "Choose file",
+        "file_pick": "Browser",
         "file_pick_title": "Choose a file containing a list of links",
         "file_empty": "No file selected! Please choose a file first.",
         "all_files": "All files",
