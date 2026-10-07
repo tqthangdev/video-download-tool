@@ -7,7 +7,7 @@
 #    1. Creates a virtual environment (.venv) — if the system
 #       cannot create one it falls back to installing packages
 #       into vendor/.
-#    2. Installs the dependencies listed in requirements.txt.
+#    2. Installs the dependencies declared in pyproject.toml.
 #
 #  Usage:
 #    ./setup.sh                # install everything
@@ -36,9 +36,9 @@ echo
 echo "Python: $($PYTHON_BIN --version 2>/dev/null || echo 'not found')"
 echo "Hệ điều hành: $(uname -s)"
 
-if [ ! -f "requirements.txt" ]; then
+if [ ! -f "pyproject.toml" ]; then
     echo
-    echo "LOI: khong tim thay requirements.txt trong thu muc project."
+    echo "LOI: khong tim thay pyproject.toml trong thu muc project."
     exit 1
 fi
 
@@ -73,9 +73,9 @@ echo
 echo "[2/2] Cai dat dependencies..."
 "$PY" -m pip install --upgrade pip
 if [ "$VENV_MODE" = "vendor" ]; then
-    "$PY" -m pip install --target "$VENDOR_DIR" -r requirements.txt
+    "$PY" -m pip install --target "$VENDOR_DIR" .
 else
-    "$PY" -m pip install -r requirements.txt
+    "$PY" -m pip install .
 fi
 
 # ================= DONE =================

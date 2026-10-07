@@ -6,7 +6,7 @@
 #    1. Creates a virtual environment (.venv) — if the system
 #       cannot create one it falls back to installing packages
 #       into vendor/.
-#    2. Installs the dependencies listed in requirements.txt.
+#    2. Installs the dependencies declared in pyproject.toml.
 #
 #  Usage:
 #    powershell -ExecutionPolicy Bypass -File setup.ps1
@@ -83,9 +83,9 @@ if (-not $PythonExe) {
     $PythonExe = Join-Path $PYTHON_DIR "python.exe"
 }
 
-if (Test-Path (Join-Path $PSScriptRoot "requirements.txt") -eq $false) {
+if (Test-Path (Join-Path $PSScriptRoot "pyproject.toml") -eq $false) {
     Write-Host ""
-    Write-Host "LOI: khong tim thay requirements.txt trong thu muc project."
+    Write-Host "LOI: khong tim thay pyproject.toml trong thu muc project."
     exit 1
 }
 
@@ -116,9 +116,9 @@ if ($VenvMode -eq "venv") {
 Write-Step "[2/2] Cai dat dependencies..."
 & $PythonExe -m pip install --upgrade pip
 if ($VenvMode -eq "vendor") {
-    & $PythonExe -m pip install --target $VENDOR_DIR -r (Join-Path $PSScriptRoot "requirements.txt")
+    & $PythonExe -m pip install --target $VENDOR_DIR .
 } else {
-    & $PythonExe -m pip install -r (Join-Path $PSScriptRoot "requirements.txt")
+    & $PythonExe -m pip install .
 }
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 

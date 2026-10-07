@@ -50,7 +50,7 @@ powershell -ExecutionPolicy Bypass -File setup.ps1
 ### Manual installation
 
 ```bash
-pip install -r requirements.txt
+pip install .
 ```
 
 ## Running
@@ -98,21 +98,21 @@ Output files are named after the video title (`<title>.mp4` / `<title>.mp3`). Ti
 
 ## Build
 
+Install the dependencies first (`./setup.sh` on Linux/macOS, `setup.ps1` on Windows), then run the build with the project's Python:
+
 **Linux / macOS:**
 
 ```bash
-chmod +x build.sh
-./build.sh
+.venv/bin/python build.py
 ```
 
 **Windows:**
 
 ```powershell
-.\build.ps1
+.venv\Scripts\python.exe build.py
 ```
-*(If execution is blocked: `Set-ExecutionPolicy -Scope Process Bypass` first)*
 
-Both scripts install the dependencies, package the app with PyInstaller into `dist/VideoDownloadTool/`, and remove temporary files.
+`build.py` packages the app with PyInstaller into `dist/VideoDownloadTool/` and removes the temporary files. Pass `--onefile` for a single-file executable.
 
 
 ## Disclaimer

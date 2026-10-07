@@ -10,6 +10,10 @@
 *.pyo
 *.pyd
 
+# Packaging metadata (pip install .)
+
+*.egg-info/
+
 # Virtual environments
 
 .venv/

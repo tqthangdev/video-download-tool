@@ -23,8 +23,8 @@ if not defined PY if exist "vendor" (
 
 if defined PY goto :run
 
-if not exist "requirements.txt" (
-    echo requirements.txt not found in the project folder.
+if not exist "pyproject.toml" (
+    echo pyproject.toml not found in the project folder.
     echo Please run: powershell -ExecutionPolicy Bypass -File setup.ps1
     pause
     exit /b 1

@@ -21,8 +21,8 @@ pick_python() {
 pick_python
 
 if [ -z "$PY" ]; then
-    if [ ! -f "requirements.txt" ]; then
-        echo "requirements.txt not found in the project folder."
+    if [ ! -f "pyproject.toml" ]; then
+        echo "pyproject.toml not found in the project folder."
         echo "Please run: ./setup.sh"
         exit 1
     fi

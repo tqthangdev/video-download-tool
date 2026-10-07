@@ -1,0 +1,40 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "video-download-tool"
+version = "1.3.0"
+description = "Desktop video/audio downloader built on yt-dlp (PyQt6 GUI)"
+readme = { file = "README.MD", content-type = "text/markdown" }
+requires-python = ">=3.10"
+authors = [{ name = "tqthangdev" }]
+dependencies = [
+    "yt-dlp",
+    "requests",
+    "PyQt6",
+    "qasync",
+]
+
+[project.optional-dependencies]
+build = [
+    "pyinstaller>=6.0",
+]
+dev = [
+    "pytest>=8.0",
+]
+
+[project.gui-scripts]
+video-download-tool = "run:main"
+
+# `core/` and `gui/` are implicit namespace packages (no __init__.py), so
+# discovery has to allow namespaces instead of listing every subpackage.
+[tool.setuptools]
+py-modules = ["run"]
+
+[tool.setuptools.packages.find]
+include = ["core*", "gui*"]
+namespaces = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
