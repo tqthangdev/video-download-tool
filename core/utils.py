@@ -36,6 +36,25 @@ def safe_filename(name: str, max_length: int = MAX_FILENAME_BYTES):
     return name
 
 
+def format_size(num_bytes) -> str:
+    """Human-readable file size ("1.05 GB", "720 KB"), "" when unknown."""
+    try:
+        size = float(num_bytes)
+    except (TypeError, ValueError):
+        return ""
+    if size <= 0:
+        return ""
+
+    for unit in ("B", "KB", "MB", "GB", "TB"):
+        if size < 1024 or unit == "TB":
+            if unit == "B":
+                return f"{int(size)} B"
+            text = f"{size:.2f}".rstrip("0").rstrip(".")
+            return f"{text} {unit}"
+        size /= 1024
+    return f"{size:.2f} TB"
+
+
 def get_base_dir() -> Path:
     """Return the directory containing the executable or project root."""
     if getattr(sys, "frozen", False):

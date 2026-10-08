@@ -148,6 +148,58 @@ class YtdlpClient:
             return None
         return {"http": self.proxy_url, "https": self.proxy_url}
 
+    def _get_content_length(
+        self,
+        url: str,
+        headers: dict[str, str] | None = None,
+    ) -> int | None:
+        """Get media size from HTTP headers when yt-dlp has no filesize."""
+        request_headers = {
+            "User-Agent": _BROWSER_UA,
+            **(headers or {}),
+        }
+
+        try:
+            with requests.head(
+                url,
+                headers=request_headers,
+                timeout=int(self.config.get("request_timeout", 30)),
+                allow_redirects=True,
+                proxies=self._requests_proxies(),
+            ) as response:
+                content_length = response.headers.get("Content-Length")
+                if content_length and content_length.isdigit():
+                    return int(content_length)
+
+        except Exception as exc:
+            logger.debug(f"[size] HEAD request failed for {url}: {exc}")
+
+        # Some servers do not support HEAD but do return the total size for
+        # a one-byte range request.
+        try:
+            request_headers["Range"] = "bytes=0-0"
+
+            with requests.get(
+                url,
+                headers=request_headers,
+                timeout=int(self.config.get("request_timeout", 30)),
+                stream=True,
+                allow_redirects=True,
+                proxies=self._requests_proxies(),
+            ) as response:
+                content_range = response.headers.get("Content-Range")
+
+                if content_range and "/" in content_range:
+                    total = content_range.rsplit("/", 1)[1]
+
+                    if total.isdigit():
+                        return int(total)
+
+        except Exception as exc:
+            logger.debug(f"[size] Range request failed for {url}: {exc}")
+
+        return None
+
     # ------------------------------------------------------------------
     # OPTIONS
     # ------------------------------------------------------------------
@@ -233,11 +285,38 @@ class YtdlpClient:
             if entry:
                 info = entry
 
-        return self._to_video_info(info, url), info.get("id")
+        video_info = self._to_video_info(info, url)
+        self._fill_missing_filesizes(video_info, info)
+
+        return video_info, info.get("id")
 
     def refresh_formats(self, url: str) -> VideoInfo:
         """Explicit format refresh (flow.md #59)."""
         return self.extract(url)
+
+    def _fill_missing_filesizes(
+        self,
+        video_info: VideoInfo,
+        info: dict,
+    ) -> None:
+        """Fill missing format sizes using HTTP Content-Length."""
+        http_headers = info.get("http_headers") or {}
+
+        for fmt in video_info.formats:
+            if fmt.filesize is not None or fmt.filesize_approx is not None:
+                continue
+
+            # Manifest URLs such as m3u8 do not represent the final media size.
+            if not fmt.url or ".m3u8" in fmt.url.lower():
+                continue
+
+            size = self._get_content_length(
+                fmt.url,
+                headers=http_headers,
+            )
+
+            if size is not None:
+                fmt.filesize = size
 
     # ------------------------------------------------------------------
     # GENERIC MEDIA-URL DISCOVERY

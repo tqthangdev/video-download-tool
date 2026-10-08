@@ -12,6 +12,7 @@ from PyQt6.QtCore import QSize, Qt, pyqtSignal
 from gui.queue_delegate import QueueDelegate
 from gui.theme import QUEUE_LIST_STYLE
 from core.i18n import tr
+from core.utils import format_size
 
 ROW_HEIGHT = 40
 
@@ -109,6 +110,7 @@ class RightPanel(QWidget):
                 "url": job.url,
                 "title": job.title,
                 "format": job.format_label,
+                "size": format_size(job.size_bytes),
                 "status": status,
                 "path": str(job.save_path),
             },
@@ -124,6 +126,7 @@ class RightPanel(QWidget):
 
         data["status"] = status
         data["format"] = job.format_label
+        data["size"] = format_size(job.size_bytes)
         self.queue_list.item(index).setData(Qt.ItemDataRole.UserRole, data)
         self.queue_list.viewport().update()
 

@@ -1,7 +1,10 @@
-"""Video preview: thumbnail, metadata and the format radio buttons (flow.md #12).
+"""Video preview: thumbnail, metadata and the format picker (flow.md #12).
 
 The selected object is always the full FormatChoice — the GUI never rebuilds a
 format id from the label text (flow.md #13).
+
+The picker is a Video/Audio switch plus a combo box listing that type's
+formats (`MP4 — 720p — 1.05 GB`).
 """
 
 from __future__ import annotations
@@ -9,26 +12,28 @@ from __future__ import annotations
 from PyQt6.QtCore import QSize, Qt, pyqtSignal
 from PyQt6.QtGui import QMovie
 from PyQt6.QtWidgets import (
-    QButtonGroup,
-    QFrame,
+    QComboBox,
     QHBoxLayout,
     QLabel,
-    QScrollArea,
     QSizePolicy,
     QVBoxLayout,
     QWidget,
 )
 
-from core.format_selector import FormatChoice
+from core.format_selector import (
+    AUDIO,
+    VIDEO,
+    FormatChoice,
+    select_default_format,
+)
 from core.i18n import tr
-from core.utils import get_resource_path
+from core.utils import format_size, get_resource_path
 from gui.theme import (
-    CHAPTER_PANEL_STYLE,
-    FORMAT_GROUP_STYLE,
+    PREVIEW_PANEL_STYLE,
     LIVE_BADGE_STYLE,
     MANGA_TITLE_STYLE,
+    PREVIEW_COMBO_STYLE,
     PREVIEW_META_STYLE,
-    SCROLLBAR_STYLE,
 )
 from gui.widgets import make_radio_button
 
@@ -52,26 +57,27 @@ def format_duration(seconds) -> str:
 
 
 class VideoPreview(QWidget):
-    """Metadata + format radio buttons for the currently previewed URL."""
+    """Metadata + format picker for the currently previewed URL."""
 
     formatChanged = pyqtSignal(object)  # FormatChoice | None
 
-    def __init__(self, parent=None):
+    def __init__(self, config: dict | None = None, parent=None):
         super().__init__(parent)
 
+        # The config decides which format is pre-selected per type (the
+        # configured video quality / audio bitrate).
+        self._config = config or {}
         self._choices: list[FormatChoice] = []
-        self._buttons: dict[str, object] = {}
+        self._index_by_key: dict[str, int] = {}
+        self._selected: FormatChoice | None = None
         self._is_live = False
-        self._group = QButtonGroup(self)
-        self._group.setExclusive(True)
-        self._group.buttonToggled.connect(self._on_toggled)
+        self._updating = False
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(6)
 
-        layout.addWidget(self._build_meta())
-        layout.addWidget(self._build_formats(), 1)
+        layout.addWidget(self._build_preview(), 1)
         layout.addWidget(self._build_loading(), 1)
         self.set_loading(False)
 
@@ -79,14 +85,20 @@ class VideoPreview(QWidget):
     # UI
     # ------------------------------------------------------------------
 
-    def _build_meta(self) -> QWidget:
-        self.meta_panel = QWidget()
-        self.meta_panel.setObjectName("preview_meta")
-        self.meta_panel.setStyleSheet(CHAPTER_PANEL_STYLE)
+    def _build_preview(self) -> QWidget:
+        self.preview_panel = QWidget()
+        self.preview_panel.setObjectName("video_preview")
+        self.preview_panel.setStyleSheet(PREVIEW_PANEL_STYLE)
 
-        outer = QVBoxLayout(self.meta_panel)
+        outer = QVBoxLayout(self.preview_panel)
         outer.setContentsMargins(6, 6, 6, 6)
-        outer.setSpacing(4)
+        outer.setSpacing(6)
+
+        # ===== METADATA =====
+        meta = QWidget()
+        meta_layout = QVBoxLayout(meta)
+        meta_layout.setContentsMargins(6, 6, 6, 6)
+        meta_layout.setSpacing(4)
 
         line1 = QHBoxLayout()
         self.thumb = QLabel()
@@ -119,47 +131,52 @@ class VideoPreview(QWidget):
         line2.addStretch()
         line2.addWidget(self.duration_label)
 
-        outer.addLayout(line1)
-        outer.addLayout(line2)
+        meta_layout.addLayout(line1)
+        meta_layout.addLayout(line2)
+        outer.addWidget(meta)
 
-        return self.meta_panel
+        # ===== FORMAT PICKER =====
+        formats = QWidget()
+        formats_layout = QVBoxLayout(formats)
+        formats_layout.setContentsMargins(6, 6, 6, 6)
+        formats_layout.setSpacing(6)
 
-    def _build_formats(self) -> QWidget:
-        self.formats_panel = QWidget()
-        self.formats_panel.setObjectName("preview_formats")
-        self.formats_panel.setStyleSheet(CHAPTER_PANEL_STYLE)
+        # ===== TYPE (Video / Audio) =====
+        type_row = QHBoxLayout()
+        type_row.setContentsMargins(0, 0, 0, 0)
+        type_row.setSpacing(10)
 
-        outer = QVBoxLayout(self.formats_panel)
-        outer.setContentsMargins(6, 6, 6, 6)
-        outer.setSpacing(4)
+        self.type_label = QLabel(tr("formats_label"))
+        self.type_label.setStyleSheet(PREVIEW_META_STYLE)
+        self.rb_video = make_radio_button(tr("format_video"))
+        self.rb_audio = make_radio_button(tr("format_audio"))
+        self.rb_video.toggled.connect(self._on_type_toggled)
+        self.rb_audio.toggled.connect(self._on_type_toggled)
 
-        self.formats_header = QLabel(tr("formats_label"))
-        self.formats_header.setStyleSheet(PREVIEW_META_STYLE)
+        type_row.addWidget(self.type_label)
+        type_row.addWidget(self.rb_video)
+        type_row.addWidget(self.rb_audio)
+        type_row.addStretch()
 
-        # Groups are laid out side by side (MP4 | MP3), each one a column of
-        # radio buttons under its own header.
-        self.radio_host = QWidget()
-        self.radio_layout = QHBoxLayout(self.radio_host)
-        self.radio_layout.setContentsMargins(2, 0, 2, 0)
-        self.radio_layout.setSpacing(28)
-        self.radio_layout.addStretch()
-
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
-        scroll.setFrameShape(QFrame.Shape.NoFrame)
-        scroll.setStyleSheet(SCROLLBAR_STYLE)
-        scroll.setWidget(self.radio_host)
+        # ===== FORMATS OF THE CHOSEN TYPE =====
+        self.combo = QComboBox()
+        self.combo.setPlaceholderText(tr("formats_empty"))
+        self.combo.setCurrentIndex(-1)
+        self.combo.setStyleSheet(PREVIEW_COMBO_STYLE)
+        self.combo.currentIndexChanged.connect(self._on_combo_changed)
 
         self.empty_label = QLabel(tr("no_formats"))
         self.empty_label.setWordWrap(True)
         self.empty_label.setStyleSheet(PREVIEW_META_STYLE)
         self.empty_label.hide()
 
-        outer.addWidget(self.formats_header)
-        outer.addWidget(scroll, 1)
-        outer.addWidget(self.empty_label)
+        formats_layout.addLayout(type_row)
+        formats_layout.addWidget(self.combo)
+        formats_layout.addWidget(self.empty_label)
+        formats_layout.addStretch()
+        outer.addWidget(formats)
 
-        return self.formats_panel
+        return self.preview_panel
 
     def _build_loading(self) -> QWidget:
         """Centered spinner shown while a URL is being extracted."""
@@ -194,16 +211,14 @@ class VideoPreview(QWidget):
         """Show/hide the loading spinner, replacing the preview content."""
         if on:
             self.clear()
-            self.meta_panel.hide()
-            self.formats_panel.hide()
+            self.preview_panel.hide()
             self.loading_text.setText(tr("loading_preview"))
             self.loading_panel.show()
             self.movie.start()
         else:
             self.movie.stop()
             self.loading_panel.hide()
-            self.meta_panel.show()
-            self.formats_panel.show()
+            self.preview_panel.show()
 
     # ------------------------------------------------------------------
     # POPULATION
@@ -224,60 +239,50 @@ class VideoPreview(QWidget):
         )
         self.set_thumbnail(thumbnail)
 
-        self._clear_radios()
         self._choices = list(choices)
+        self._selected = None
 
-        groups: dict[str, list[tuple[int, FormatChoice]]] = {}
-        for index, choice in enumerate(self._choices):
-            groups.setdefault(choice.group, []).append((index, choice))
+        self._updating = True
+        try:
+            self.rb_video.setEnabled(bool(self._choices_of(VIDEO)))
+            self.rb_audio.setEnabled(bool(self._choices_of(AUDIO)))
+        finally:
+            self._updating = False
 
-        for group_name in sorted(
-            groups, key=lambda name: (0 if groups[name][0][1].type == "video" else 1, name)
-        ):
-            column = QWidget()
-            column_layout = QVBoxLayout(column)
-            column_layout.setContentsMargins(0, 0, 0, 0)
-            column_layout.setSpacing(2)
-
-            header = QLabel(group_name)
-            header.setStyleSheet(FORMAT_GROUP_STYLE)
-            column_layout.addWidget(header)
-
-            for index, choice in groups[group_name]:
-                button = make_radio_button(choice.label)
-                button.setProperty("choice_index", index)
-                self._group.addButton(button)
-                self._buttons[self._key(choice)] = button
-                column_layout.addWidget(button)
-
-            column_layout.addStretch()
-            self.radio_layout.insertWidget(self.radio_layout.count() - 1, column)
-
+        self.combo.setVisible(bool(self._choices))
         self.empty_label.setVisible(not self._choices)
-        self.formats_header.setVisible(bool(self._choices))
 
         if default is not None:
-            self.select_choice(default)
+            target = default
         elif self._choices:
-            self.select_choice(self._choices[0])
+            target = self._default_of(self._choices[0].type)
         else:
+            target = None
+        if target is not None:
+            self.select_choice(target)
+        else:
+            self._clear_combo()
             self.formatChanged.emit(None)
 
-    def select_choice(self, choice: FormatChoice):
-        button = self._buttons.get(self._key(choice))
-        if button is not None:
-            button.setChecked(True)
-            self.formatChanged.emit(choice)
+    def select_choice(self, choice: FormatChoice | None):
+        if choice is None or choice not in self._choices:
+            return
+
+        self._updating = True
+        try:
+            if choice.type == AUDIO:
+                self.rb_audio.setChecked(True)
+            else:
+                self.rb_video.setChecked(True)
+            self._selected = None
+            self._populate_combo(choice.type, choice)
+        finally:
+            self._updating = False
+
+        self.formatChanged.emit(choice)
 
     def selected_choice(self) -> FormatChoice | None:
-        button = self._group.checkedButton()
-        if button is None:
-            return None
-        index = button.property("choice_index")
-        try:
-            return self._choices[int(index)]
-        except (TypeError, ValueError, IndexError):
-            return None
+        return self._selected
 
     def is_live(self) -> bool:
         """True when the previewed URL is a stream that is broadcasting now."""
@@ -291,12 +296,23 @@ class VideoPreview(QWidget):
         self._is_live = False
         self.thumb.clear()
         self._choices = []
-        self._clear_radios()
+        self._selected = None
+
+        self._updating = True
+        try:
+            self.rb_video.setEnabled(False)
+            self.rb_audio.setEnabled(False)
+            self._clear_combo()
+        finally:
+            self._updating = False
+
         self.empty_label.hide()
         self.formatChanged.emit(None)
 
     def retranslate(self):
-        self.formats_header.setText(tr("formats_label"))
+        self.type_label.setText(tr("formats_label"))
+        self.rb_video.setText(tr("format_video"))
+        self.rb_audio.setText(tr("format_audio"))
         self.empty_label.setText(tr("no_formats"))
         self.loading_text.setText(tr("loading_preview"))
         self.live_label.setText(tr("live_badge"))
@@ -309,6 +325,65 @@ class VideoPreview(QWidget):
     def _key(choice: FormatChoice) -> str:
         return f"{choice.group}|{choice.label}|{choice.format_id}"
 
+    @staticmethod
+    def _label(choice: FormatChoice) -> str:
+        size = format_size(choice.filesize)
+        if size:
+            return f"{choice.group} — {choice.label} — {size}"
+        return f"{choice.group} — {choice.label}"
+
+    def _choices_of(self, type_: str) -> list[FormatChoice]:
+        return [c for c in self._choices if c.type == type_]
+
+    def _default_of(self, type_: str) -> FormatChoice | None:
+        """The format matching the configured default for this type."""
+        candidates = self._choices_of(type_)
+        if not candidates:
+            return None
+        return select_default_format(candidates, self._config) or candidates[0]
+
+    def _clear_combo(self):
+        self.combo.clear()
+        self._index_by_key = {}
+
+    def _populate_combo(self, type_: str, target: FormatChoice | None):
+        self.combo.clear()
+        self._index_by_key = {}
+        for index, choice in enumerate(self._choices_of(type_)):
+            self.combo.addItem(self._label(choice), choice)
+            self._index_by_key[self._key(choice)] = index
+        if target is not None:
+            index = self._index_by_key.get(self._key(target), -1)
+            if index >= 0:
+                self.combo.setCurrentIndex(index)
+                self._selected = target
+
+    def _on_type_toggled(self, checked: bool):
+        if not checked or self._updating:
+            return
+        type_ = VIDEO if self.sender() is self.rb_video else AUDIO
+        candidates = self._choices_of(type_)
+        if not candidates:
+            return
+
+        target = self._default_of(type_)
+        self._updating = True
+        try:
+            self._selected = None
+            self._populate_combo(type_, target)
+        finally:
+            self._updating = False
+
+        self.formatChanged.emit(target)
+
+    def _on_combo_changed(self, index: int):
+        if self._updating or index < 0:
+            return
+        choice = self.combo.itemData(index)
+        if choice is not None:
+            self._selected = choice
+            self.formatChanged.emit(choice)
+
     def set_thumbnail(self, data):
         """Set the thumbnail from raw image bytes (or None to clear)."""
         pixmap = pixmap_from_bytes(data)
@@ -316,22 +391,6 @@ class VideoPreview(QWidget):
             self.thumb.clear()
         else:
             self.thumb.setPixmap(pixmap)
-
-    def _clear_radios(self):
-        for button in list(self._buttons.values()):
-            self._group.removeButton(button)
-            button.deleteLater()
-        self._buttons.clear()
-
-        while self.radio_layout.count() > 1:
-            item = self.radio_layout.takeAt(0)
-            widget = item.widget()
-            if widget is not None:
-                widget.deleteLater()
-
-    def _on_toggled(self, button, checked: bool):
-        if checked:
-            self.formatChanged.emit(self.selected_choice())
 
 
 def pixmap_from_bytes(data):

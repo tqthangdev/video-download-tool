@@ -267,7 +267,7 @@ class LeftPanel(QWidget):
         meta_layout.addWidget(self.version_icon)
 
         # ================= VIDEO PREVIEW =================
-        self.preview = VideoPreview()
+        self.preview = VideoPreview(CONFIG)
 
         # ================= ASSEMBLE =================
         layout.addWidget(self.mode_area, 0)

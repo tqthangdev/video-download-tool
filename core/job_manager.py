@@ -99,6 +99,15 @@ class Job:
     def output_ext(self) -> str:
         return (self.selected_format or {}).get("output_ext") or ""
 
+    @property
+    def size_bytes(self) -> int | None:
+        """Expected size of the chosen format, when it is known."""
+        value = (self.selected_format or {}).get("filesize")
+        try:
+            return int(value) if value else None
+        except (TypeError, ValueError):
+            return None
+
 
 class JobManager:
 

@@ -220,6 +220,7 @@ class MainWindow(QWidget):
             self.engine.config,
             ffmpeg_available=self.engine.ffmpeg_available(),
             source_url=info.source_url,
+            duration=info.duration,
         )
 
         if info.is_live:
@@ -369,7 +370,7 @@ class MainWindow(QWidget):
             if info is not None:
                 choices = build_choices(
                     info.formats, self.engine.config, ffmpeg_available=ffmpeg,
-                    source_url=info.source_url,
+                    source_url=info.source_url, duration=info.duration,
                 )
                 choice = select_default_format(choices, self.engine.config)
                 if auto_mp3:

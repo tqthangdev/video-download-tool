@@ -79,6 +79,7 @@ class QueueDelegate(QStyledItemDelegate):
 
         title = data.get("title", "")
         fmt = data.get("format", "")
+        size = data.get("size", "")
         status = data.get("status", "")
 
         painter.save()
@@ -125,23 +126,40 @@ class QueueDelegate(QStyledItemDelegate):
                 fmt,
             )
 
-        # ================= line 2: status =================
+        # ================= line 2: status (left) + size (right) =================
+        size_width = metrics.horizontalAdvance(size) if size else 0
+        reserved = size_width + self.GAP if size else 0
+        status_rect = QRect(
+            status_text_rect.left(),
+            status_text_rect.top(),
+            max(0, status_text_rect.width() - reserved),
+            status_text_rect.height(),
+        )
+
         painter.setPen(QColor(_status_color(status)))
 
         font = painter.font()
-        if metrics.horizontalAdvance(status) > status_text_rect.width():
+        if metrics.horizontalAdvance(status) > status_rect.width():
             font.setPointSizeF(max(2.0, font.pointSizeF() - 1))
             while font.pointSizeF() > 2.0:
-                if QFontMetrics(font).horizontalAdvance(status) <= status_text_rect.width():
+                if QFontMetrics(font).horizontalAdvance(status) <= status_rect.width():
                     break
                 font.setPointSizeF(max(2.0, font.pointSizeF() - 0.5))
             painter.setFont(font)
 
         painter.drawText(
-            status_text_rect,
+            status_rect,
             Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
             status,
         )
+
+        if size:
+            painter.setPen(QColor("#9e9e9e"))
+            painter.drawText(
+                status_text_rect,
+                Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter,
+                size,
+            )
 
         painter.restore()
 

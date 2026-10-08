@@ -166,13 +166,44 @@ QCheckBox::indicator:checked {
 }
 """)
 
-# Video preview containers (left panel): metadata + format list.
-CHAPTER_PANEL_STYLE = """
-QWidget#preview_meta, QWidget#preview_formats {
+# Border for the left panel's preview box (metadata + format picker).
+PREVIEW_PANEL_STYLE = """
+QWidget#video_preview {
     background: transparent;
     border: 1px solid #adadad;
 }
 """
+
+# Format picker in the video preview (single combo box, white border like the
+# other inputs, shared thin scrollbar for the popup list).
+PREVIEW_COMBO_STYLE = _resolve_assets("""
+QComboBox {
+    background-color: #1e1e1e;
+    border: 1px solid #ffffff;
+    border-radius: 4px;
+    padding: 4px 6px;
+    color: #e0e0e0;
+}
+QComboBox::drop-down {
+    subcontrol-origin: padding;
+    subcontrol-position: top right;
+    width: 20px;
+    border: none;
+}
+QComboBox::down-arrow {
+    image: url("assets/spin-down.svg");
+    width: 10px;
+    height: 6px;
+}
+QComboBox QAbstractItemView {
+    background-color: #1e1e1e;
+    color: #e0e0e0;
+    border: 1px solid #ffffff;
+    selection-background-color: #4fc3f7;
+    selection-color: #1e1e1e;
+    outline: none;
+}
+""") + SCROLLBAR_STYLE
 
 # Queue list in the right panel: transparent background + thin white border.
 QUEUE_LIST_STYLE = """
@@ -296,9 +327,8 @@ QListWidget {
 }
 """ + SCROLLBAR_STYLE
 
-# Video preview: metadata text and format group headers.
+# Video preview: metadata text.
 PREVIEW_META_STYLE = "color:#9e9e9e; font-size:12px;"
-FORMAT_GROUP_STYLE = "color:#00e5ff; font-size:13px; font-weight:bold; margin-top:4px;"
 
 # Session name in the sessions dialog: while read-only it is drawn as a plain
 # label (transparent background + no border) instead of a text box.

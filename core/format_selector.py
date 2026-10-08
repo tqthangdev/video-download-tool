@@ -195,10 +195,22 @@ def _best_video(entries: list[VideoFormat]) -> VideoFormat:
     return max(entries, key=score)
 
 
+def _best_audio_size(formats: list[VideoFormat]) -> int:
+    """Size of the audio track a video-only stream would be merged with."""
+    sizes = [
+        f.filesize or f.filesize_approx or 0
+        for f in formats
+        if f.has_audio and not f.has_video
+    ]
+    return max(sizes, default=0)
+
+
 def _video_choices(formats: list[VideoFormat], has_audio_only: bool) -> list[FormatChoice]:
     videos = [f for f in formats if f.has_video]
     if not videos:
         return []
+
+    audio_size = _best_audio_size(formats) if has_audio_only else 0
 
     sized = [f for f in videos if f.height]
     if not sized:
@@ -212,6 +224,7 @@ def _video_choices(formats: list[VideoFormat], has_audio_only: bool) -> list[For
         else:
             expression, needs_ffmpeg = rep.format_id, False
 
+        base = rep.filesize or rep.filesize_approx
         return [FormatChoice(
             group=GROUP_VIDEO,
             label="Best",
@@ -219,7 +232,7 @@ def _video_choices(formats: list[VideoFormat], has_audio_only: bool) -> list[For
             format_id=expression,
             output_ext="mp4",
             needs_ffmpeg=needs_ffmpeg,
-            filesize=rep.filesize or rep.filesize_approx,
+            filesize=((base or 0) + audio_size) or None if needs_ffmpeg else base,
         )]
 
     groups: dict[tuple[int, str], list[VideoFormat]] = {}
@@ -254,7 +267,11 @@ def _video_choices(formats: list[VideoFormat], has_audio_only: bool) -> list[For
         if height in heights_with_multiple_exts:
             label = f"{height}p ({ext})"
 
-        size = rep.filesize or rep.filesize_approx
+        base = rep.filesize or rep.filesize_approx
+        if needs_ffmpeg:
+            size = ((base or 0) + audio_size) or None  # merged video + audio
+        else:
+            size = base
         choices.append(
             FormatChoice(
                 group=GROUP_VIDEO,
@@ -271,7 +288,12 @@ def _video_choices(formats: list[VideoFormat], has_audio_only: bool) -> list[For
     return choices
 
 
-def _audio_choices(config: dict, ffmpeg_available: bool, has_audio: bool) -> list[FormatChoice]:
+def _audio_choices(
+    config: dict,
+    ffmpeg_available: bool,
+    has_audio: bool,
+    duration: Optional[int] = None,
+) -> list[FormatChoice]:
     if not has_audio:
         return []
 
@@ -283,6 +305,9 @@ def _audio_choices(config: dict, ffmpeg_available: bool, has_audio: bool) -> lis
     bitrates = config.get("default_audio_bitrates") or list(DEFAULT_AUDIO_BITRATES)
     choices: list[FormatChoice] = []
     for bitrate in sorted({int(b) for b in bitrates}):
+        # The MP3 output does not exist yet; its size follows the chosen
+        # bitrate and the video length (kbps -> bytes).
+        size = int(duration * bitrate * 1000 / 8) if duration else None
         choices.append(
             FormatChoice(
                 group=GROUP_AUDIO,
@@ -292,6 +317,7 @@ def _audio_choices(config: dict, ffmpeg_available: bool, has_audio: bool) -> lis
                 output_ext="mp3",
                 bitrate=bitrate,
                 needs_ffmpeg=True,
+                filesize=size,
             )
         )
     return choices
@@ -302,13 +328,14 @@ def build_choices(
     config: dict | None = None,
     ffmpeg_available: bool = True,
     source_url: str | None = None,
+    duration: int | None = None,
 ) -> list[FormatChoice]:
     """Build the selectable format choices from normalized formats."""
     config = config or {}
     has_audio = any(f.has_audio for f in formats)
 
     choices = _video_choices(formats, has_audio)
-    choices.extend(_audio_choices(config, ffmpeg_available, has_audio))
+    choices.extend(_audio_choices(config, ffmpeg_available, has_audio, duration))
 
     if source_url:
         for choice in choices:
