@@ -12,7 +12,6 @@ from __future__ import annotations
 from PyQt6.QtCore import QSize, Qt, pyqtSignal
 from PyQt6.QtGui import QMovie
 from PyQt6.QtWidgets import (
-    QComboBox,
     QHBoxLayout,
     QLabel,
     QSizePolicy,
@@ -35,7 +34,7 @@ from gui.theme import (
     PREVIEW_COMBO_STYLE,
     PREVIEW_META_STYLE,
 )
-from gui.widgets import make_radio_button
+from gui.widgets import make_combo, make_radio_button
 
 THUMB_W = 160
 THUMB_H = 90
@@ -159,7 +158,7 @@ class VideoPreview(QWidget):
         type_row.addStretch()
 
         # ===== FORMATS OF THE CHOSEN TYPE =====
-        self.combo = QComboBox()
+        self.combo = make_combo()
         self.combo.setPlaceholderText(tr("formats_empty"))
         self.combo.setCurrentIndex(-1)
         self.combo.setStyleSheet(PREVIEW_COMBO_STYLE)

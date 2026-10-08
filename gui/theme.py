@@ -199,9 +199,16 @@ QComboBox QAbstractItemView {
     background-color: #1e1e1e;
     color: #e0e0e0;
     border: 1px solid #ffffff;
-    selection-background-color: #4fc3f7;
-    selection-color: #1e1e1e;
     outline: none;
+}
+QComboBox QAbstractItemView::item {
+    padding: 3px 6px;
+}
+QComboBox QAbstractItemView::item:hover,
+QComboBox QAbstractItemView::item:selected {
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                                stop:0 #66bb6a, stop:1 #4caf50);
+    color: #1e1e1e;
 }
 """) + SCROLLBAR_STYLE
 
@@ -303,9 +310,16 @@ QComboBox QAbstractItemView {
     background-color: #1e1e1e;
     color: #e0e0e0;
     border: 1px solid #ffffff;
-    selection-background-color: #4fc3f7;
-    selection-color: #1e1e1e;
     outline: none;
+}
+QComboBox QAbstractItemView::item {
+    padding: 3px 6px;
+}
+QComboBox QAbstractItemView::item:hover,
+QComboBox QAbstractItemView::item:selected {
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                                stop:0 #66bb6a, stop:1 #4caf50);
+    color: #1e1e1e;
 }
 """)
 

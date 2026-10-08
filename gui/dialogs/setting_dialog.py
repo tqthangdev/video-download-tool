@@ -24,7 +24,7 @@ from core.utils import CONFIG, save_config
 from gui.cursor_utils import apply_pointer_cursors
 from gui.dialogs.help_dialog import HelpDialog
 from gui.theme import CONFIG_DIALOG_STYLE, LIST_STYLE
-from gui.widgets import make_checkbox, make_help_button
+from gui.widgets import make_checkbox, make_combo, make_help_button
 
 # Options offered by the Settings dropdowns.
 WORKER_OPTIONS = tuple(range(1, 11))
@@ -68,7 +68,7 @@ class SettingDialog(QDialog):
         form = QFormLayout()
 
         # ===== LANGUAGE COMBOBOX =====
-        self.cb_lang = QComboBox()
+        self.cb_lang = make_combo()
         self.cb_lang.addItem(tr("lang_vi"), "vi")
         self.cb_lang.addItem(tr("lang_en"), "en")
         idx = self.cb_lang.findData(get_lang())
@@ -95,7 +95,7 @@ class SettingDialog(QDialog):
                 # Free-form value (the download folder) stays a text box.
                 widget = QLineEdit(str(value))
             else:
-                widget = QComboBox()
+                widget = make_combo()
                 # Keep an unrecognised stored value selectable instead of
                 # silently replacing it with the first option.
                 if value not in [option_value for _, option_value in options]:
