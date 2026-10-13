@@ -114,6 +114,19 @@ Install the dependencies first (`./setup.sh` on Linux/macOS, `setup.ps1` on Wind
 
 `build.py` packages the app with PyInstaller into `dist/VideoDownloadTool/` and removes the temporary files. Pass `--onefile` for a single-file executable.
 
+The external binaries the app needs are **bundled**, so a release only has to be extracted and run — no installs on the user's machine:
+
+- **FFmpeg** (`ffmpeg`/`ffprobe`) — merges video+audio and makes MP3.
+- **Deno** — the JavaScript runtime yt-dlp uses to solve YouTube's JS challenges.
+
+Fetch them once before building:
+
+```bash
+python tools/fetch_vendor.py     # downloads FFmpeg + Deno into vendor/
+```
+
+`build.py` picks them up automatically (and warns if they are missing). The official releases include them; CI runs the fetch before building.
+
 
 ## Disclaimer
 

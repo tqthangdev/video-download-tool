@@ -31,16 +31,48 @@ from core.errors import (
 )
 from core.format_selector import VIDEO, VideoInfo, normalize_formats
 from core.logger import logger
-from core.utils import build_output_template, clean_title, job_temp_dir, resolve_output_file
+from core.utils import (
+    build_output_template,
+    clean_title,
+    get_resource_path,
+    job_temp_dir,
+    resolve_output_file,
+)
 
 
 class _Cancelled(Exception):
     """Raised inside a progress hook to abort a running download."""
 
 
+def ffmpeg_path() -> str | None:
+    """The FFmpeg binary to use: bundled with the app, else the one on PATH.
+
+    Release builds ship FFmpeg next to the app (see `build.py`), so an installed
+    copy never has to rely on the user's PATH.
+    """
+    exe_name = "ffmpeg.exe" if os.name == "nt" else "ffmpeg"
+    bundled = get_resource_path(exe_name)
+    if bundled.is_file():
+        return str(bundled)
+    return shutil.which(exe_name)
+
+
 def ffmpeg_available() -> bool:
-    """True when an FFmpeg binary is on PATH (needed for merge/conversion)."""
-    return shutil.which("ffmpeg") is not None
+    """True when FFmpeg is available (needed for merge/conversion)."""
+    return ffmpeg_path() is not None
+
+
+def js_runtime_path() -> str | None:
+    """The Deno binary yt-dlp should use for YouTube's JS challenges.
+
+    Bundled with the app (see `build.py`); falls back to `deno` on PATH. Without
+    a JS runtime YouTube extraction is degraded and misses formats.
+    """
+    exe_name = "deno.exe" if os.name == "nt" else "deno"
+    bundled = get_resource_path(exe_name)
+    if bundled.is_file():
+        return str(bundled)
+    return shutil.which(exe_name)
 
 
 # ----------------------------------------------------------------------
@@ -232,6 +264,15 @@ class YtdlpClient:
         }
         if self.proxy_url:
             opts["proxy"] = self.proxy_url
+
+        ffmpeg = ffmpeg_path()
+        if ffmpeg:
+            opts["ffmpeg_location"] = os.path.dirname(ffmpeg)
+
+        deno = js_runtime_path()
+        if deno:
+            opts["js_runtimes"] = {"deno": {"path": os.path.dirname(deno)}}
+
         opts.update(self._cookies_opts())
         if extra:
             opts.update(extra)

@@ -44,6 +44,9 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install ".[build]"
 
+      - name: Fetch external binaries
+        run: python tools/fetch_vendor.py
+
       - name: Build
         run: python build.py
 
@@ -58,6 +61,8 @@ jobs:
           set -e
 
           test -f dist/VideoDownloadTool/VideoDownloadTool
+          test -f dist/VideoDownloadTool/_internal/ffmpeg
+          test -f dist/VideoDownloadTool/_internal/deno
 
           echo "=== Linux build ==="
           ls -lah dist/VideoDownloadTool
@@ -71,6 +76,16 @@ jobs:
         run: |
           if (!(Test-Path "dist\VideoDownloadTool\VideoDownloadTool.exe")) {
               Write-Error "VideoDownloadTool.exe was not created."
+              exit 1
+          }
+
+          if (!(Test-Path "dist\VideoDownloadTool\_internal\ffmpeg.exe")) {
+              Write-Error "ffmpeg.exe was not bundled."
+              exit 1
+          }
+
+          if (!(Test-Path "dist\VideoDownloadTool\_internal\deno.exe")) {
+              Write-Error "deno.exe was not bundled."
               exit 1
           }
 

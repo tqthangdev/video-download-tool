@@ -205,12 +205,25 @@ def _best_audio_size(formats: list[VideoFormat]) -> int:
     return max(sizes, default=0)
 
 
-def _video_choices(formats: list[VideoFormat], has_audio_only: bool) -> list[FormatChoice]:
+def _video_choices(
+    formats: list[VideoFormat],
+    has_audio_only: bool,
+    ffmpeg_available: bool = True,
+) -> list[FormatChoice]:
     videos = [f for f in formats if f.has_video]
     if not videos:
         return []
 
-    audio_size = _best_audio_size(formats) if has_audio_only else 0
+    # Merging a video-only stream with the audio track needs FFmpeg. Without it,
+    # only progressive (video+audio) streams produce a usable file, so a
+    # video-only group is dropped instead of failing mid-download.
+    if not ffmpeg_available:
+        videos = [f for f in videos if f.has_audio]
+        if not videos:
+            return []
+
+    can_merge = has_audio_only and ffmpeg_available
+    audio_size = _best_audio_size(formats) if can_merge else 0
 
     sized = [f for f in videos if f.height]
     if not sized:
@@ -219,7 +232,7 @@ def _video_choices(formats: list[VideoFormat], has_audio_only: bool) -> list[For
         rep = _best_video(videos)
         if rep.has_audio:
             expression, needs_ffmpeg = rep.format_id, False
-        elif has_audio_only:
+        elif can_merge:
             expression, needs_ffmpeg = f"{rep.format_id}+bestaudio/{rep.format_id}", True
         else:
             expression, needs_ffmpeg = rep.format_id, False
@@ -256,7 +269,7 @@ def _video_choices(formats: list[VideoFormat], has_audio_only: bool) -> list[For
         if rep.has_audio:
             expression = rep.format_id
             needs_ffmpeg = False
-        elif has_audio_only:
+        elif can_merge:
             expression = f"{rep.format_id}+bestaudio/{rep.format_id}"
             needs_ffmpeg = True
         else:
@@ -334,7 +347,7 @@ def build_choices(
     config = config or {}
     has_audio = any(f.has_audio for f in formats)
 
-    choices = _video_choices(formats, has_audio)
+    choices = _video_choices(formats, has_audio, ffmpeg_available)
     choices.extend(_audio_choices(config, ffmpeg_available, has_audio, duration))
 
     if source_url:

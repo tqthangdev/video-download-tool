@@ -94,6 +94,52 @@ def verify_assets(dist_dir: Path) -> None:
         raise SystemExit("Missing bundled asset(s): " + ", ".join(missing))
 
 
+def _exe_suffix() -> str:
+    return ".exe" if sys.platform == "win32" else ""
+
+
+# (vendor folder, file name) of the external binaries bundled next to the app.
+# FFmpeg merges video+audio and makes MP3; Deno is the JavaScript runtime yt-dlp
+# uses for YouTube's JS challenges.
+_BUNDLED_BINARIES = (
+    ("ffmpeg", "ffmpeg"),
+    ("ffmpeg", "ffprobe"),
+    ("deno", "deno"),
+)
+
+
+def vendor_binaries() -> list[Path]:
+    """Binaries fetched by `tools/fetch_vendor.py`, when present."""
+    paths = []
+    for tool, name in _BUNDLED_BINARIES:
+        path = ROOT / "vendor" / tool / f"{name}{_exe_suffix()}"
+        if path.is_file():
+            paths.append(path)
+    return paths
+
+
+def verify_bundle(dist_dir: Path, binaries: list[Path]) -> None:
+    """Fail the build if a fetched binary or yt-dlp's JS solver is missing."""
+    internal = dist_dir / "_internal"
+
+    missing = [binary.name for binary in binaries if not (internal / binary.name).is_file()]
+    if missing:
+        raise SystemExit(
+            "Missing from the bundle: "
+            + ", ".join(missing)
+            + " (run: python tools/fetch_vendor.py)."
+        )
+
+    solver = (
+        internal / "yt_dlp" / "extractor" / "youtube" / "jsc"
+        / "_builtin" / "vendor" / "yt.solver.core.js"
+    )
+    if not solver.is_file():
+        raise SystemExit(
+            "yt-dlp's JavaScript solver scripts are missing from the bundle."
+        )
+
+
 def in_virtualenv() -> bool:
     """True when this interpreter belongs to a virtual environment."""
     if os.environ.get("VIRTUAL_ENV"):
@@ -226,6 +272,20 @@ def build(name: str, onefile: bool, console: bool) -> int:
     if version_file.is_file():
         command += ["--add-data", f"{version_file}{os.pathsep}."]
 
+    # FFmpeg + Deno are bundled next to the app (core.ytdlp finds them).
+    binaries = vendor_binaries()
+    for binary in binaries:
+        command += ["--add-binary", f"{binary}{os.pathsep}."]
+    if not binaries:
+        print(
+            "WARNING: no FFmpeg/Deno in vendor/ — run python tools/fetch_vendor.py "
+            "so the release runs without extra installs.",
+            file=sys.stderr,
+        )
+
+    # yt-dlp reads its .js solver scripts from the package directory at runtime.
+    command += ["--collect-data", "yt_dlp"]
+
     command.append(str(ROOT / "run.py"))
 
     print("Running:", " ".join(command))
@@ -239,6 +299,7 @@ def build(name: str, onefile: bool, console: bool) -> int:
                 print(f"Removed bundled {library} (must come from the host)")
             verify_no_unbundled_libs(dist_dir)
         verify_assets(dist_dir)
+        verify_bundle(dist_dir, binaries)
 
     entry_point = _entry_point(dist_dir, name, onefile)
     if not entry_point.is_file():
