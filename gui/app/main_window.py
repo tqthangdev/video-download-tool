@@ -464,6 +464,14 @@ class MainWindow(QWidget):
         if choice is not None:
             self.left.preview.select_choice(choice)
 
+    def _clear_preview(self):
+        """Empty the preview (and the URL bar) once an add has been handled."""
+        self._video_info = None
+        self._choices = []
+        self.left.url_input.clear()
+        self.left.preview.clear()
+        self.left._update_add_button()
+
     # =========================
     # ADD QUEUE
     # =========================
@@ -499,6 +507,9 @@ class MainWindow(QWidget):
             elif result == "already_downloaded":
                 self._show_message(tr("notify"), tr("already_downloaded"))
 
+            # The URL has been dealt with, so leave the preview empty for the
+            # next link instead of showing the one just added.
+            self._clear_preview()
             self._update_buttons()
         except Exception as exc:
             self._show_message(tr("error"), str(exc), critical=True)
@@ -681,9 +692,15 @@ class MainWindow(QWidget):
         self.left.set_session_name(info.name if info else "")
 
     def _populate_queue(self, jobs):
+        """Fill the queue for a session that is being switched to.
+
+        Jobs that are already done stay in the session's database (so the same
+        link is still recognised as downloaded) but are left out of the queue.
+        """
         for job in jobs:
-            status = "Done" if job.status == STATUS_DONE else "Waiting"
-            self.right.update_queue_item(job, status)
+            if job.status == STATUS_DONE:
+                continue
+            self.right.update_queue_item(job, "Waiting")
 
     def open_sessions(self):
         dialog = SessionDialog(self.engine, self)
@@ -697,11 +714,11 @@ class MainWindow(QWidget):
         self._update_buttons()
 
     def _populate_session_menu(self):
-        """List the stored sessions by id; picking one switches to it."""
+        """List the stored sessions by name; picking one switches to it."""
         self.menu_session_list.clear()
         current = self.engine.session_id
         for session in self.engine.list_sessions():
-            action = self.menu_session_list.addAction(session.id)
+            action = self.menu_session_list.addAction(session.name)
             action.setCheckable(True)
             action.setChecked(session.id == current)
             action.setEnabled(session.id != current)
