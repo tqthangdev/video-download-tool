@@ -22,7 +22,6 @@ from PyQt6.QtWidgets import (
 
 from core.i18n import tr
 from gui.cursor_utils import apply_pointer_cursors
-from gui.theme import HELP_TITLE_STYLE, LIST_STYLE, OUTLINE_BUTTON_STYLE
 
 ARROW_DOWN = "\u25bc"
 ARROW_UP = "\u25b2"
@@ -46,7 +45,6 @@ class _Section(QWidget):
 
         self.toggle = QToolButton()
         self.toggle.setAutoRaise(True)
-        self.toggle.setStyleSheet(OUTLINE_BUTTON_STYLE)
         self.toggle.setEnabled(bool(items))
         self.toggle.clicked.connect(self._toggle)
         layout.addWidget(self.toggle, 0, Qt.AlignmentFlag.AlignLeft)
@@ -55,7 +53,6 @@ class _Section(QWidget):
         self.list.setSelectionMode(QAbstractItemView.SelectionMode.NoSelection)
         self.list.setFixedHeight(min(_MAX_LIST_HEIGHT, _ROW_HEIGHT * max(1, len(items)) + 8))
         self.list.setVisible(False)
-        self.list.setStyleSheet(LIST_STYLE)
         for entry in items:
             text = entry.get("title") or entry.get("url") or ""
             if entry.get("reason"):
@@ -108,7 +105,7 @@ class ImportResultDialog(QDialog):
                 name=result.get("file") or "", count=result.get("total", 0)
             )
         )
-        header.setStyleSheet(HELP_TITLE_STYLE)
+        header.setObjectName("dialog_title")
         layout.addWidget(header)
 
         layout.addWidget(_Section(tr("import_success"), result.get("success") or []))

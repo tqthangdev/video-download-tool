@@ -30,7 +30,7 @@ from gui.dialogs.setting_dialog import SettingDialog
 from gui.dialogs.version_dialog import VersionDialog
 from gui.dialogs.import_result_dialog import ImportResultDialog
 from gui.cursor_utils import apply_pointer_cursors
-from gui.theme import MAIN_WINDOW_STYLE
+from gui.theme import THEMES, apply_theme, current_theme
 from gui.video_preview import fetch_thumbnail_bytes
 from core.logger import logger
 from core.i18n import tr, add_listener, get_lang, set_lang
@@ -64,7 +64,6 @@ class MainWindow(QWidget):
         window = self.frameGeometry()
         window.moveCenter(screen.center())
         self.move(window.topLeft())
-        self.setStyleSheet(MAIN_WINDOW_STYLE)
 
         self._video_info = None
         self._choices = []
@@ -158,6 +157,16 @@ class MainWindow(QWidget):
             self.act_lang[code] = action
         self._sync_language_checks()
 
+        self.menu_theme = self.menu.addMenu(tr("theme"))
+        self.act_theme = {}
+        for name in THEMES:
+            action = QAction(tr(f"theme_{name}"), self)
+            action.setCheckable(True)
+            action.triggered.connect(lambda _checked=False, n=name: self._set_theme(n))
+            self.menu_theme.addAction(action)
+            self.act_theme[name] = action
+        self._sync_theme_checks()
+
         self.menu.addSeparator()
 
         self.act_settings = QAction(tr("settings"), self)
@@ -196,10 +205,14 @@ class MainWindow(QWidget):
             return
 
         path, _ = QFileDialog.getSaveFileName(
-            self, tr("export_dialog_title"), "links.txt", "*.txt"
+            self, tr("export_dialog_title"), "export_queue_link.txt", f"{tr('all_files')} (*)"
         )
+
         if not path:
             return
+
+        if Path(path).suffix.lower() != ".txt":
+            path += ".txt"
 
         try:
             Path(path).write_text("\n".join(urls) + "\n", encoding="utf-8")
@@ -225,6 +238,24 @@ class MainWindow(QWidget):
     def _sync_language_checks(self):
         for code, action in self.act_lang.items():
             action.setChecked(get_lang() == code)
+
+    # =========================
+    # THEME
+    # =========================
+    def _set_theme(self, name: str):
+        if name == current_theme():
+            return
+        CONFIG["theme"] = name
+        save_config(CONFIG)
+        apply_theme(name)
+        self._sync_theme_checks()
+        # The queue rows are painted by hand, so they need a repaint to pick up
+        # the new palette.
+        self.right.queue_list.viewport().update()
+
+    def _sync_theme_checks(self):
+        for name, action in self.act_theme.items():
+            action.setChecked(current_theme() == name)
 
     # =========================
     # SETTINGS / ABOUT
@@ -301,6 +332,10 @@ class MainWindow(QWidget):
         for code, action in self.act_lang.items():
             action.setText(tr(f"lang_{code}"))
         self._sync_language_checks()
+        self.menu_theme.setTitle(tr("theme"))
+        for name, action in self.act_theme.items():
+            action.setText(tr(f"theme_{name}"))
+        self._sync_theme_checks()
         self.act_settings.setText(tr("settings"))
         self.act_about.setText(tr("about"))
         self.act_quit.setText(tr("quit"))

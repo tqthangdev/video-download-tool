@@ -9,7 +9,6 @@ from core.i18n import tr
 from core.updater.version import read_current_version
 from gui.cursor_utils import apply_pointer_cursors
 from gui.dialogs.version_dialog import display_version
-from gui.theme import HELP_TITLE_STYLE
 
 
 def ytdlp_version() -> str:
@@ -36,11 +35,11 @@ class AboutDialog(QDialog):
         layout = QVBoxLayout(self)
 
         title_label = QLabel(tr("app_title"))
-        title_label.setStyleSheet(HELP_TITLE_STYLE)
+        title_label.setObjectName("dialog_title")
         title_label.setWordWrap(True)
 
         desc_label = QLabel(
-            tr("about_desc").format(version=ytdlp_version() or "?")
+            tr("about_desc").format(ytdlp_version=ytdlp_version() or "?")
         )
         desc_label.setWordWrap(True)
         desc_label.setTextInteractionFlags(

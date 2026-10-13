@@ -12,8 +12,7 @@ from PyQt6.QtWidgets import (
     QToolButton,
 )
 
-from core.utils import get_resource_path
-from gui.theme import CHECKBOX_STYLE, OUTLINE_BUTTON_STYLE, RADIO_STYLE
+from gui import theme
 
 # Checkbox rows sit next to the same-height text inputs / buttons, so a fixed
 # height keeps the rows of the sidebar aligned.
@@ -114,28 +113,24 @@ def make_combo() -> QComboBox:
 def make_help_button(callback=None) -> QToolButton:
     """A "?" help button: gray icon, green while hovered."""
     button = _HoverIconButton(
-        QIcon(str(get_resource_path("assets/question.svg"))),
-        QIcon(str(get_resource_path("assets/question-hover.svg"))),
+        QIcon(theme.asset("question.svg")),
+        QIcon(theme.asset("question-hover.svg")),
     )
     button.setIconSize(QSize(HELP_ICON_SIZE, HELP_ICON_SIZE))
     button.setFixedSize(HELP_BUTTON_SIZE, HELP_BUTTON_SIZE)
     button.setAutoRaise(True)
-    button.setStyleSheet(OUTLINE_BUTTON_STYLE)
     if callback is not None:
         button.clicked.connect(callback)
     return button
 
 
 def make_radio_button(text: str) -> QRadioButton:
-    """A QRadioButton with the app's custom indicator icons applied."""
-    btn = QRadioButton(text)
-    btn.setStyleSheet(RADIO_STYLE)
-    return btn
+    """A QRadioButton using the app's custom indicator icons."""
+    return QRadioButton(text)
 
 
 def make_checkbox(text: str) -> QCheckBox:
-    """A QCheckBox with the app's custom indicator icons applied."""
+    """A QCheckBox using the app's custom indicator icons."""
     cb = QCheckBox(text)
-    cb.setStyleSheet(CHECKBOX_STYLE)
     cb.setFixedHeight(CHECKBOX_HEIGHT)
     return cb

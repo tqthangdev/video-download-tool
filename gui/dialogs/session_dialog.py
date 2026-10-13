@@ -27,12 +27,6 @@ from PyQt6.QtWidgets import (
 from core.i18n import tr
 from core.sessions import SESSION_NAME_MAX_LENGTH
 from gui.cursor_utils import apply_pointer_cursors
-from gui.theme import (
-    MAIN_WINDOW_STYLE,
-    PREVIEW_META_STYLE,
-    SCROLLBAR_STYLE,
-    SESSION_NAME_READONLY_STYLE,
-)
 from gui.widgets import make_radio_button
 
 ACTION_BUTTON_WIDTH = 104
@@ -65,7 +59,6 @@ class SessionDialog(QDialog):
         # Pin the initial size: otherwise the dialog grows with its layout
         # sizeHint (i.e. with the number of rows) instead of scrolling.
         self.resize(570, 400)
-        self.setStyleSheet(MAIN_WINDOW_STYLE)
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(12, 12, 12, 12)
@@ -87,7 +80,7 @@ class SessionDialog(QDialog):
         layout.addLayout(actions)
 
         self.empty_label = QLabel(tr("session_empty"))
-        self.empty_label.setStyleSheet(PREVIEW_META_STYLE)
+        self.empty_label.setObjectName("meta_label")
         layout.addWidget(self.empty_label)
 
         self.rows_host = QWidget()
@@ -99,7 +92,6 @@ class SessionDialog(QDialog):
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.Shape.NoFrame)
-        scroll.setStyleSheet(SCROLLBAR_STYLE)
         scroll.setWidget(self.rows_host)
         self.scroll = scroll
         layout.addWidget(scroll, 1)
@@ -173,14 +165,14 @@ class SessionDialog(QDialog):
         )
 
         name_input = QLineEdit(session.name)
+        name_input.setObjectName("session_name_input")
         name_input.setReadOnly(True)
         name_input.setFixedHeight(28)
         name_input.setMaxLength(SESSION_NAME_MAX_LENGTH)
-        name_input.setStyleSheet(SESSION_NAME_READONLY_STYLE)
         self._name_inputs[session.id] = name_input
 
         status = QLabel(tr("session_status_in_use") if session.id == current_id else "")
-        status.setStyleSheet(PREVIEW_META_STYLE)
+        status.setObjectName("meta_label")
         status.setFixedWidth(STATUS_WIDTH)
 
         def _pick(_event, r=radio):
@@ -233,7 +225,6 @@ class SessionDialog(QDialog):
             return
         self._editing = session_id
         name_input.setReadOnly(False)
-        name_input.setStyleSheet("")
         name_input.setFocus()
         name_input.selectAll()
         self.btn_edit.setText(tr("session_save"))
@@ -248,7 +239,6 @@ class SessionDialog(QDialog):
         if name_input is None:
             return
         name_input.setReadOnly(True)
-        name_input.setStyleSheet(SESSION_NAME_READONLY_STYLE)
         self.engine.rename_session(session_id, name_input.text())
         # Reflect what was actually stored (empty input keeps the old name).
         info = self.engine.session_store.get(session_id)

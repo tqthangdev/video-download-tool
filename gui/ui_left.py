@@ -14,7 +14,6 @@ from PyQt6.QtCore import Qt, QSettings
 
 from core.i18n import tr
 from core.utils import CONFIG
-from gui.theme import COMPACT_INPUT_STYLE, PREVIEW_META_STYLE
 from gui.video_preview import VideoPreview
 from gui.widgets import make_checkbox
 
@@ -103,7 +102,7 @@ class LeftPanel(QWidget):
         self.shutdown_delay.setValidator(QIntValidator(1, 600, self))
         self.shutdown_delay.setText(str(saved_delay if isinstance(saved_delay, int) else 10))
         self.shutdown_delay.setFixedSize(38, 22)
-        self.shutdown_delay.setStyleSheet(COMPACT_INPUT_STYLE)
+        self.shutdown_delay.setObjectName("compact_input")
         self.shutdown_delay.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.shutdown_delay.setToolTip(tr("shutdown_delay_hint"))
         self.shutdown_delay.editingFinished.connect(self._save_shutdown_delay)
@@ -123,7 +122,7 @@ class LeftPanel(QWidget):
 
         self._session_name = ""
         self.session_label = QLabel("")
-        self.session_label.setStyleSheet(PREVIEW_META_STYLE)
+        self.session_label.setObjectName("meta_label")
 
         # ================= VIDEO PREVIEW =================
         self.preview = VideoPreview(CONFIG)

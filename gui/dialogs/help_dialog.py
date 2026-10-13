@@ -7,7 +7,6 @@ from PyQt6.QtWidgets import QDialog, QDialogButtonBox, QLabel, QVBoxLayout
 
 from core.i18n import tr
 from gui.cursor_utils import apply_pointer_cursors
-from gui.theme import HELP_TITLE_STYLE
 
 
 class HelpDialog(QDialog):
@@ -22,7 +21,7 @@ class HelpDialog(QDialog):
         layout = QVBoxLayout(self)
 
         title_label = QLabel(title)
-        title_label.setStyleSheet(HELP_TITLE_STYLE)
+        title_label.setObjectName("dialog_title")
         title_label.setWordWrap(True)
 
         desc_label = QLabel(description)

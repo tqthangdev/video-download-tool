@@ -9,7 +9,6 @@ from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import QDialog, QLabel, QProgressBar, QVBoxLayout
 
 from core.i18n import tr
-from gui.theme import PROGRESS_STYLE
 
 
 class AddJobsDialog(QDialog):
@@ -28,7 +27,6 @@ class AddJobsDialog(QDialog):
         self.label.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
         self.progress = QProgressBar()
-        self.progress.setStyleSheet(PROGRESS_STYLE)
         self.progress.setRange(0, 0)
         self.progress.setTextVisible(False)
 

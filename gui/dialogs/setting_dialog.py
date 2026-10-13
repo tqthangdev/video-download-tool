@@ -23,7 +23,6 @@ from core.i18n import tr
 from core.utils import CONFIG, save_config
 from gui.cursor_utils import apply_pointer_cursors
 from gui.dialogs.help_dialog import HelpDialog
-from gui.theme import CONFIG_DIALOG_STYLE, LIST_STYLE
 from gui.widgets import make_checkbox, make_combo, make_help_button
 
 # Options offered by the Settings dropdowns.
@@ -59,7 +58,6 @@ class SettingDialog(QDialog):
         self.setWindowTitle(tr("settings_title"))
         self.setModal(True)
         self.setMinimumWidth(520)
-        self.setStyleSheet(CONFIG_DIALOG_STYLE)
 
         self.network = network
         self._inputs = {}
@@ -116,7 +114,6 @@ class SettingDialog(QDialog):
 
             layout.addWidget(QLabel(tr("network_learned")))
             self.network_list = QListWidget()
-            self.network_list.setStyleSheet(LIST_STYLE)
             self.network_list.setFixedHeight(72)
             self.network_list.setSelectionMode(
                 QAbstractItemView.SelectionMode.NoSelection

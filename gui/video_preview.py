@@ -27,12 +27,6 @@ from core.format_selector import (
 )
 from core.i18n import tr
 from core.utils import format_size, get_resource_path
-from gui.theme import (
-    LIVE_BADGE_STYLE,
-    MANGA_TITLE_STYLE,
-    PREVIEW_COMBO_STYLE,
-    PREVIEW_META_STYLE,
-)
 from gui.widgets import make_combo, make_radio_button
 
 THUMB_W = 160
@@ -102,7 +96,7 @@ class VideoPreview(QWidget):
         self.thumb.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
         self.title_label = QLabel("")
-        self.title_label.setStyleSheet(MANGA_TITLE_STYLE)
+        self.title_label.setObjectName("video_title")
         self.title_label.setWordWrap(True)
         # Same height as the thumbnail so the two line up in the row.
         self.title_label.setFixedHeight(THUMB_H)
@@ -116,12 +110,12 @@ class VideoPreview(QWidget):
 
         line2 = QHBoxLayout()
         self.live_label = QLabel(tr("live_badge"))
-        self.live_label.setStyleSheet(LIVE_BADGE_STYLE)
+        self.live_label.setObjectName("live_badge")
         self.live_label.setVisible(False)
         self.uploader_label = QLabel("")
-        self.uploader_label.setStyleSheet(PREVIEW_META_STYLE)
+        self.uploader_label.setObjectName("meta_label")
         self.duration_label = QLabel("")
-        self.duration_label.setStyleSheet(PREVIEW_META_STYLE)
+        self.duration_label.setObjectName("meta_label")
         line2.addWidget(self.live_label)
         line2.addWidget(self.uploader_label)
         line2.addStretch()
@@ -143,7 +137,7 @@ class VideoPreview(QWidget):
         type_row.setSpacing(6)
 
         self.type_label = QLabel(tr("formats_label"))
-        self.type_label.setStyleSheet(PREVIEW_META_STYLE)
+        self.type_label.setObjectName("meta_label")
         self.rb_video = make_radio_button(tr("format_video"))
         self.rb_audio = make_radio_button(tr("format_audio"))
         self.rb_video.toggled.connect(self._on_type_toggled)
@@ -158,12 +152,11 @@ class VideoPreview(QWidget):
         self.combo = make_combo()
         self.combo.setPlaceholderText(tr("formats_empty"))
         self.combo.setCurrentIndex(-1)
-        self.combo.setStyleSheet(PREVIEW_COMBO_STYLE)
         self.combo.currentIndexChanged.connect(self._on_combo_changed)
 
         self.empty_label = QLabel(tr("no_formats"))
         self.empty_label.setWordWrap(True)
-        self.empty_label.setStyleSheet(PREVIEW_META_STYLE)
+        self.empty_label.setObjectName("meta_label")
         self.empty_label.hide()
 
         formats_layout.addLayout(type_row)
@@ -192,7 +185,7 @@ class VideoPreview(QWidget):
 
         self.loading_text = QLabel(tr("loading_preview"))
         self.loading_text.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.loading_text.setStyleSheet(PREVIEW_META_STYLE)
+        self.loading_text.setObjectName("meta_label")
 
         outer.addWidget(self.loading_icon)
         outer.addWidget(self.loading_text)

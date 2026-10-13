@@ -10,7 +10,6 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtCore import QSize, Qt, pyqtSignal
 
 from gui.queue_delegate import QueueDelegate
-from gui.theme import QUEUE_LIST_STYLE
 from core.i18n import tr
 from core.utils import format_size
 
@@ -56,7 +55,6 @@ class RightPanel(QWidget):
         # ================= QUEUE LIST =================
         self.queue_list = QListWidget()
         self.queue_list.setObjectName("queue_list")
-        self.queue_list.setStyleSheet(QUEUE_LIST_STYLE)
         self._delegate = QueueDelegate(self.queue_list)
         self.queue_list.setItemDelegate(self._delegate)
         self._delegate.deleteRequested.connect(self.deleteRequested)

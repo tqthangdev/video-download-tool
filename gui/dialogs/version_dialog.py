@@ -28,12 +28,6 @@ from core.updater.checker import UpdateError, check_for_update
 from core.updater.installer import InstallError, prepare_update
 from core.updater.version import read_current_version
 from gui.cursor_utils import apply_pointer_cursors
-from gui.theme import (
-    HELP_TITLE_STYLE,
-    OUTLINE_BUTTON_STYLE,
-    PROGRESS_STYLE,
-    TEXT_AREA_STYLE,
-)
 
 
 def display_version(version: str) -> str:
@@ -95,7 +89,7 @@ class VersionDialog(QDialog):
         layout = QVBoxLayout(self)
 
         self.title_label = QLabel(tr("version"))
-        self.title_label.setStyleSheet(HELP_TITLE_STYLE)
+        self.title_label.setObjectName("dialog_title")
         layout.addWidget(self.title_label)
 
         self.current_label = QLabel("")
@@ -117,20 +111,17 @@ class VersionDialog(QDialog):
         self._notes_expanded = False
         self.notes_toggle = QToolButton()
         self.notes_toggle.setAutoRaise(True)
-        self.notes_toggle.setStyleSheet(OUTLINE_BUTTON_STYLE)
         self.notes_toggle.clicked.connect(self._toggle_notes)
         self.notes_toggle.setVisible(False)
         layout.addWidget(self.notes_toggle, 0, Qt.AlignmentFlag.AlignLeft)
 
         self.notes_area = QTextEdit()
         self.notes_area.setReadOnly(True)
-        self.notes_area.setStyleSheet(TEXT_AREA_STYLE)
         self.notes_area.setFixedHeight(120)
         self.notes_area.setVisible(False)
         layout.addWidget(self.notes_area)
 
         self.progress = QProgressBar()
-        self.progress.setStyleSheet(PROGRESS_STYLE)
         self.progress.setTextVisible(False)
         self.progress.setFixedHeight(8)
         self.progress.setVisible(False)

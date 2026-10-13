@@ -79,6 +79,7 @@ Both launchers install the dependencies automatically if they are missing. Or ru
 | `default_video_quality` | yes | Quality pre-selected in the preview and for batch import (e.g. `720p`) |
 | `default_audio_bitrate` | yes | MP3 bitrate pre-selected in the preview and used by **Auto convert to mp3** |
 | `language` | yes | UI language (`vi` / `en`) |
+| `theme` | yes | UI theme: `system` (follows the OS), `light` or `dark` |
 | `network_enabled` | yes | Automatic per-host network fallback (see below) |
 | `default_audio_bitrates` | no | Bitrates offered in the MP3 group |
 | `request_timeout` | no | Per-request timeout, seconds |

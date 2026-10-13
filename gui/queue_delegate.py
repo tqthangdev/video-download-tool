@@ -2,7 +2,7 @@ from PyQt6.QtWidgets import QStyledItemDelegate
 from PyQt6.QtGui import QColor, QFontMetrics, QPixmap
 from PyQt6.QtCore import Qt, QRect, QEvent, pyqtSignal
 
-from core.utils import get_resource_path
+from gui import theme
 
 
 class QueueDelegate(QStyledItemDelegate):
@@ -22,7 +22,7 @@ class QueueDelegate(QStyledItemDelegate):
     def __init__(self, parent=None):
         super().__init__(parent)
 
-        self.trash_pixmap = QPixmap(str(get_resource_path("assets/trash.svg")))
+        self.trash_pixmap = QPixmap(theme.asset("trash.svg"))
 
         # `parent` must be the view so we can grab its viewport, enable mouse
         # tracking, and install an event filter on it.
@@ -111,7 +111,7 @@ class QueueDelegate(QStyledItemDelegate):
         format_width = metrics.horizontalAdvance(fmt) if fmt else 0
         title_width = max(0, title_rect.width() - format_width - self.GAP)
 
-        painter.setPen(QColor("#e0e0e0"))
+        painter.setPen(QColor(theme.color("text_strong")))
         painter.drawText(
             QRect(title_rect.left(), title_rect.top(), title_width, title_rect.height()),
             Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
@@ -119,7 +119,7 @@ class QueueDelegate(QStyledItemDelegate):
         )
 
         if fmt:
-            painter.setPen(QColor("#9e9e9e"))
+            painter.setPen(QColor(theme.color("text_dim")))
             painter.drawText(
                 title_rect,
                 Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter,
@@ -154,7 +154,7 @@ class QueueDelegate(QStyledItemDelegate):
         )
 
         if size:
-            painter.setPen(QColor("#9e9e9e"))
+            painter.setPen(QColor(theme.color("text_dim")))
             painter.drawText(
                 status_text_rect,
                 Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter,
@@ -186,4 +186,4 @@ def _status_color(status: str) -> str:
         return "#9E9E9E"
     if status.startswith(("Downloading", "Processing", "Starting")):
         return "#4CAF50"
-    return "#e0e0e0"
+    return theme.color("text_strong")

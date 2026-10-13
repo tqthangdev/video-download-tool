@@ -21,11 +21,15 @@ def main():
     from core.engine import Engine
     from core.utils import CONFIG
     from core.updater.installer import cleanup_staging
+    from gui.theme import apply_theme
 
     # A leftover staging folder from a previous update is removed here.
     cleanup_staging()
 
     app = QApplication(sys.argv)
+
+    # The whole look comes from one stylesheet, applied before any window exists.
+    apply_theme(CONFIG.get("theme", "system"), app)
 
     icon_path = _get_base_dir() / "assets" / "icon.png"
     if icon_path.exists():

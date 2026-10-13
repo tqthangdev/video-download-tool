@@ -107,6 +107,7 @@ DEFAULT_CONFIG = {
     "shutdown_after_complete": False,
     "shutdown_delay": 30,
     "language": "en",
+    "theme": "system",
     "request_timeout": 30,
     "download_retry": 3,
     "cookies_file": "",
