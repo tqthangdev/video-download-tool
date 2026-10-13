@@ -14,7 +14,8 @@
 #    ./setup.sh --no-venv      # skip venv, install packages into vendor/
 # ============================================================
 set -euo pipefail
-cd "$(dirname "$0")"
+# The script lives in scripts/; the project root is one level up.
+cd "$(dirname "$0")/.."
 
 PYTHON_BIN="${PYTHON_BIN:-python3}"
 VENV_PY=".venv/bin/python"

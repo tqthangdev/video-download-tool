@@ -34,13 +34,13 @@ Use the setup script to create a virtual environment (`.venv`) and install the d
 **Linux / macOS:**
 
 ```bash
-./setup.sh
+./scripts/setup.sh
 ```
 
 **Windows (PowerShell):**
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File setup.ps1
+powershell -ExecutionPolicy Bypass -File scripts/setup.ps1
 ```
 
 | Option | Windows equivalent | Description |
@@ -99,21 +99,21 @@ Output files are named after the video title (`<title>.mp4` / `<title>.mp3`). Ti
 
 ## Build
 
-Install the dependencies first (`./setup.sh` on Linux/macOS, `setup.ps1` on Windows), then run the build with the project's Python:
+Install the dependencies first (`./scripts/setup.sh` on Linux/macOS, `scripts/setup.ps1` on Windows), then run the build with the project's Python:
 
 **Linux / macOS:**
 
 ```bash
-.venv/bin/python build.py
+.venv/bin/python scripts/build.py
 ```
 
 **Windows:**
 
 ```powershell
-.venv\Scripts\python.exe build.py
+.venv\Scripts\python.exe scripts\build.py
 ```
 
-`build.py` packages the app with PyInstaller into `dist/VideoDownloadTool/` and removes the temporary files. Pass `--onefile` for a single-file executable.
+`scripts/build.py` packages the app with PyInstaller into `dist/VideoDownloadTool/` and removes the temporary files. Pass `--onefile` for a single-file executable.
 
 The external binaries the app needs are **bundled**, so a release only has to be extracted and run — no installs on the user's machine:
 
@@ -126,7 +126,29 @@ Fetch them once before building:
 python tools/fetch_vendor.py     # downloads FFmpeg + Deno into vendor/
 ```
 
-`build.py` picks them up automatically (and warns if they are missing). The official releases include them; CI runs the fetch before building.
+`scripts/build.py` picks them up automatically (and warns if they are missing). The official releases include them; CI runs the fetch before building.
+
+
+## Project layout
+
+```
+run.py                  entry point (Qt + asyncio bridge, --update dispatch)
+start.sh / start.bat    launchers (run.py + scripts/setup.sh if needed)
+version.json            the running build's version
+core/                   headless backend (no Qt except engine.py)
+  network/              local CONNECT proxy fallback (stdlib only)
+  updater/              version check + self-update
+gui/
+  app/                  MainWindow and its wiring
+  panels/               the two panels, the preview and the queue delegate
+  dialogs/              modal dialogs
+  common/               theme (palettes), widget factories, helpers
+assets/                 icons/indicator SVGs (+ -light variants)
+data/ logs/             runtime state (config, sessions, learned hosts, logs)
+docs/                   this README, flow.md (behaviour spec), feedback.md
+scripts/                build.py + setup.sh / setup.ps1 (dev + first-run install)
+tools/                  standalone diagnostics (frag_test, run_proxy, fetch_vendor)
+```
 
 
 ## Disclaimer

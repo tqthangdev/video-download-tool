@@ -1,18 +1,18 @@
 #!/usr/bin/env python3
-"""Build a standalone Video Download Tool executable with PyInstaller.
+r"""Build a standalone Video Download Tool executable with PyInstaller.
 
 Works on both Windows and Linux. Run it with the project's virtual environment
 Python so PyInstaller builds against the app's dependencies:
 
-    .venv/bin/python build.py           # Linux / macOS
-    .venv\\Scripts\\python build.py        # Windows
-    python build.py --onefile           # single-file executable
-    python build.py --name MyApp        # custom name
-    python build.py --console           # keep a console window on Windows
+    .venv/bin/python scripts/build.py           # Linux / macOS
+    .venv\Scripts\python scripts/build.py       # Windows
+    python scripts/build.py --onefile           # single-file executable
+    python scripts/build.py --name MyApp        # custom name
+    python scripts/build.py --console           # keep a console window on Windows
 
-Install the dependencies (declared in pyproject.toml) first — `./setup.sh` on
-Linux/macOS or `setup.ps1` on Windows. PyInstaller is installed into the
-*current* environment on first use, but only when that environment is a
+Install the dependencies (declared in pyproject.toml) first — `scripts/setup.sh`
+on Linux/macOS or `scripts/setup.ps1` on Windows. PyInstaller is installed into
+the *current* environment on first use, but only when that environment is a
 virtualenv: build tools are never installed into the system Python.
 """
 from __future__ import annotations
@@ -26,7 +26,9 @@ import subprocess
 import sys
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent
+# The script lives in scripts/, so the project root is one level up: every path
+# below (assets, data, version.json, vendor, dist) is relative to it.
+ROOT = Path(__file__).resolve().parent.parent
 
 APP_NAME = "VideoDownloadTool"
 
@@ -169,14 +171,14 @@ def _venv_hint() -> str:
     if (ROOT / ".venv").is_dir():
         lines += [
             "The project venv exists, so run the build with it directly:",
-            f"    {_venv_executable()} build.py",
+            f"    {_venv_executable()} scripts/build.py",
             "",
         ]
     lines += ["or activate the virtual environment first:"]
     if sys.platform == "win32":
-        lines.append(r"    .venv\Scripts\activate   then   python build.py")
+        lines.append(r"    .venv\Scripts\activate   then   python scripts/build.py")
     else:
-        lines.append("    source .venv/bin/activate   then   python build.py")
+        lines.append("    source .venv/bin/activate   then   python scripts/build.py")
     return "\n".join(lines)
 
 
@@ -308,7 +310,8 @@ def build(name: str, onefile: bool, console: bool) -> int:
 
     # Temporary PyInstaller files.
     shutil.rmtree(ROOT / "build", ignore_errors=True)
-    (ROOT / "run.spec").unlink(missing_ok=True)
+    for leftover in (f"{name}.spec", "run.spec"):
+        (ROOT / leftover).unlink(missing_ok=True)
 
     return 0
 

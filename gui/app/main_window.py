@@ -21,17 +21,17 @@ from PyQt6.QtWidgets import (
 )
 from PyQt6.QtCore import QSettings, QTimer, Qt, QEvent
 
-from gui.ui_left import LeftPanel
-from gui.ui_right import RightPanel
+from gui.panels.ui_left import LeftPanel
+from gui.panels.ui_right import RightPanel
 from gui.dialogs.about_dialog import AboutDialog
 from gui.dialogs.restore_dialog import RestoreDialog
 from gui.dialogs.session_dialog import SessionDialog
 from gui.dialogs.setting_dialog import SettingDialog
 from gui.dialogs.version_dialog import VersionDialog
 from gui.dialogs.import_result_dialog import ImportResultDialog
-from gui.cursor_utils import apply_pointer_cursors
-from gui.theme import THEMES, apply_theme, current_theme
-from gui.video_preview import fetch_thumbnail_bytes
+from gui.common.cursor_utils import apply_pointer_cursors
+from gui.common.theme import THEMES, apply_theme, current_theme
+from gui.panels.video_preview import fetch_thumbnail_bytes
 from core.logger import logger
 from core.i18n import tr, add_listener, get_lang, set_lang
 from core.format_selector import build_choices, select_audio_format, select_default_format

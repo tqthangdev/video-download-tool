@@ -18,8 +18,9 @@ param(
 
 $ErrorActionPreference = "Stop"
 
-# Làm việc từ thư mục chứa script này
-Set-Location $PSScriptRoot
+# The script lives in scripts/; the project root is one level up.
+$ProjectRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
+Set-Location $ProjectRoot
 
 function Write-Step($title) {
     Write-Host ""
@@ -28,9 +29,9 @@ function Write-Step($title) {
     Write-Host "============================================================"
 }
 
-$VENV_DIR = Join-Path $PSScriptRoot ".venv"
-$VENDOR_DIR = Join-Path $PSScriptRoot "vendor"
-$PYTHON_DIR = Join-Path $PSScriptRoot "python"
+$VENV_DIR = Join-Path $ProjectRoot ".venv"
+$VENDOR_DIR = Join-Path $ProjectRoot "vendor"
+$PYTHON_DIR = Join-Path $ProjectRoot "python"
 
 # ================= 0. FIND PYTHON =================
 Write-Step "Finding Python..."
@@ -83,7 +84,7 @@ if (-not $PythonExe) {
     $PythonExe = Join-Path $PYTHON_DIR "python.exe"
 }
 
-if (Test-Path (Join-Path $PSScriptRoot "pyproject.toml") -eq $false) {
+if (Test-Path (Join-Path $ProjectRoot "pyproject.toml") -eq $false) {
     Write-Host ""
     Write-Host "LOI: khong tim thay pyproject.toml trong thu muc project."
     exit 1

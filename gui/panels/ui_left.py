@@ -14,8 +14,8 @@ from PyQt6.QtCore import Qt, QSettings
 
 from core.i18n import tr
 from core.utils import CONFIG
-from gui.video_preview import VideoPreview
-from gui.widgets import make_checkbox
+from gui.panels.video_preview import VideoPreview
+from gui.common.widgets import make_checkbox
 
 # Shared width for the small buttons on the right of each input row.
 SIDE_BUTTON_WIDTH = 90

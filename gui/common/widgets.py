@@ -12,7 +12,7 @@ from PyQt6.QtWidgets import (
     QToolButton,
 )
 
-from gui import theme
+from gui.common import theme
 
 # Checkbox rows sit next to the same-height text inputs / buttons, so a fixed
 # height keeps the rows of the sidebar aligned.

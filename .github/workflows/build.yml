@@ -48,7 +48,7 @@ jobs:
         run: python tools/fetch_vendor.py
 
       - name: Build
-        run: python build.py
+        run: python scripts/build.py
 
       # ==========================================
       # VERIFY BUILD

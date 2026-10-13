@@ -9,7 +9,7 @@ from PyQt6.QtWidgets import (
 )
 from PyQt6.QtCore import QSize, Qt, pyqtSignal
 
-from gui.queue_delegate import QueueDelegate
+from gui.panels.queue_delegate import QueueDelegate
 from core.i18n import tr
 from core.utils import format_size
 

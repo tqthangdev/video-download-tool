@@ -27,7 +27,7 @@ from core.format_selector import (
 )
 from core.i18n import tr
 from core.utils import format_size, get_resource_path
-from gui.widgets import make_combo, make_radio_button
+from gui.common.widgets import make_combo, make_radio_button
 
 THUMB_W = 160
 THUMB_H = 90

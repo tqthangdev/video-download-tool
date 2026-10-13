@@ -7,7 +7,7 @@ from PyQt6.QtWidgets import QDialog, QDialogButtonBox, QLabel, QVBoxLayout
 
 from core.i18n import tr
 from core.updater.version import read_current_version
-from gui.cursor_utils import apply_pointer_cursors
+from gui.common.cursor_utils import apply_pointer_cursors
 from gui.dialogs.version_dialog import display_version
 
 

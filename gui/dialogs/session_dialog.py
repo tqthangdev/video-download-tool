@@ -26,8 +26,8 @@ from PyQt6.QtWidgets import (
 
 from core.i18n import tr
 from core.sessions import SESSION_NAME_MAX_LENGTH
-from gui.cursor_utils import apply_pointer_cursors
-from gui.widgets import make_radio_button
+from gui.common.cursor_utils import apply_pointer_cursors
+from gui.common.widgets import make_radio_button
 
 ACTION_BUTTON_WIDTH = 104
 STATUS_WIDTH = 110

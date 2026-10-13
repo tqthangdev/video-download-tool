@@ -6,7 +6,7 @@ from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import QDialog, QDialogButtonBox, QLabel, QVBoxLayout
 
 from core.i18n import tr
-from gui.cursor_utils import apply_pointer_cursors
+from gui.common.cursor_utils import apply_pointer_cursors
 
 
 class HelpDialog(QDialog):

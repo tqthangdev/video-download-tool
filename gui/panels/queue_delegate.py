@@ -2,7 +2,7 @@ from PyQt6.QtWidgets import QStyledItemDelegate
 from PyQt6.QtGui import QColor, QFontMetrics, QPixmap
 from PyQt6.QtCore import Qt, QRect, QEvent, pyqtSignal
 
-from gui import theme
+from gui.common import theme
 
 
 class QueueDelegate(QStyledItemDelegate):

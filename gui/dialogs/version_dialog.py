@@ -27,7 +27,7 @@ from core.i18n import tr
 from core.updater.checker import UpdateError, check_for_update
 from core.updater.installer import InstallError, prepare_update
 from core.updater.version import read_current_version
-from gui.cursor_utils import apply_pointer_cursors
+from gui.common.cursor_utils import apply_pointer_cursors
 
 
 def display_version(version: str) -> str:

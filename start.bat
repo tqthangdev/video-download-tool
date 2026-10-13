@@ -2,10 +2,11 @@
 rem ============================================================
 rem  Click-to-run for Windows:
 rem    - detect env (.venv or vendor\)
-rem    - if nothing installed, run setup.ps1
+rem    - if nothing installed, run scripts\setup.ps1
 rem    - then launch run.py
 rem ============================================================
 setlocal EnableExtensions EnableDelayedExpansion
+rem Kept next to run.py, so the project root is this script's folder.
 cd /d "%~dp0"
 chcp 65001 >nul
 
@@ -25,15 +26,15 @@ if defined PY goto :run
 
 if not exist "pyproject.toml" (
     echo pyproject.toml not found in the project folder.
-    echo Please run: powershell -ExecutionPolicy Bypass -File setup.ps1
+    echo Please run: powershell -ExecutionPolicy Bypass -File scripts\setup.ps1
     pause
     exit /b 1
 )
 
 echo Dependencies not installed. Installing (this may take a few minutes)...
-powershell -ExecutionPolicy Bypass -File setup.ps1
+powershell -ExecutionPolicy Bypass -File "%~dp0scripts\setup.ps1"
 if errorlevel 1 (
-    echo Installation failed. Please run manually: powershell -ExecutionPolicy Bypass -File setup.ps1
+    echo Installation failed. Please run manually: powershell -ExecutionPolicy Bypass -File scripts\setup.ps1
     pause
     exit /b 1
 )

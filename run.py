@@ -17,11 +17,11 @@ def main():
     from PyQt6.QtWidgets import QApplication
     from qasync import QEventLoop
 
-    from gui.main_window import MainWindow
+    from gui.app.main_window import MainWindow
     from core.engine import Engine
     from core.utils import CONFIG
     from core.updater.installer import cleanup_staging
-    from gui.theme import apply_theme
+    from gui.common.theme import apply_theme
 
     # A leftover staging folder from a previous update is removed here.
     cleanup_staging()

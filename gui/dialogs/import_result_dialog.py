@@ -21,7 +21,7 @@ from PyQt6.QtWidgets import (
 )
 
 from core.i18n import tr
-from gui.cursor_utils import apply_pointer_cursors
+from gui.common.cursor_utils import apply_pointer_cursors
 
 ARROW_DOWN = "\u25bc"
 ARROW_UP = "\u25b2"

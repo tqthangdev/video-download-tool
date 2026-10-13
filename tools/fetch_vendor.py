@@ -5,8 +5,9 @@
 - **Deno** — the JavaScript runtime yt-dlp uses to solve YouTube's JS
   challenges (without it, YouTube extraction is degraded / misses formats).
 
-They land in `vendor/ffmpeg/` and `vendor/deno/` (gitignored); `build.py` picks
-them up so a release only has to be extracted and run. Standard library only.
+They land in `vendor/ffmpeg/` and `vendor/deno/` (gitignored); `scripts/build.py`
+picks them up so a release only has to be extracted and run. Standard library
+only.
 
     python tools/fetch_vendor.py
 """

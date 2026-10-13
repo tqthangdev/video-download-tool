@@ -2,9 +2,10 @@
 #
 # Click-to-run for Linux/macOS:
 #   - detect the environment (.venv or vendor/),
-#   - if nothing is installed, run ./setup.sh,
+#   - if nothing is installed, run scripts/setup.sh,
 #   - then launch run.py.
 set -e
+# Kept next to run.py, so the project root is this script's folder.
 cd "$(dirname "$0")"
 
 pick_python() {
@@ -23,14 +24,14 @@ pick_python
 if [ -z "$PY" ]; then
     if [ ! -f "pyproject.toml" ]; then
         echo "pyproject.toml not found in the project folder."
-        echo "Please run: ./setup.sh"
+        echo "Please run: ./scripts/setup.sh"
         exit 1
     fi
     echo "Dependencies not installed. Installing (this may take a few minutes)..."
-    ./setup.sh
+    ./scripts/setup.sh
     pick_python
     if [ -z "$PY" ]; then
-        echo "Installation failed. Please run manually: ./setup.sh"
+        echo "Installation failed. Please run manually: ./scripts/setup.sh"
         exit 1
     fi
 fi

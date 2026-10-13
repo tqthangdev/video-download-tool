@@ -21,9 +21,9 @@ from PyQt6.QtWidgets import (
 
 from core.i18n import tr
 from core.utils import CONFIG, save_config
-from gui.cursor_utils import apply_pointer_cursors
+from gui.common.cursor_utils import apply_pointer_cursors
 from gui.dialogs.help_dialog import HelpDialog
-from gui.widgets import make_checkbox, make_combo, make_help_button
+from gui.common.widgets import make_checkbox, make_combo, make_help_button
 
 # Options offered by the Settings dropdowns.
 WORKER_OPTIONS = tuple(range(1, 11))
