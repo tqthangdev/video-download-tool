@@ -240,7 +240,14 @@ class LeftPanel(QWidget):
     def pick_folder(self):
         from PyQt6.QtWidgets import QFileDialog
 
-        folder = QFileDialog.getExistingDirectory(self, tr("pick_folder_title"))
+        # DontUseNativeDialog keeps this consistent with the app's own dialogs:
+        # the native one is an empty window under some Linux platform themes.
+        folder = QFileDialog.getExistingDirectory(
+            self,
+            tr("pick_folder_title"),
+            "",
+            QFileDialog.Option.ShowDirsOnly | QFileDialog.Option.DontUseNativeDialog,
+        )
         if folder:
             self.path_input.setText(folder)
             self._save_path()

@@ -192,8 +192,16 @@ class MainWindow(QWidget):
     # =========================
     @asyncSlot()
     async def import_links(self):
+        # DontUseNativeDialog: the GTK platform theme some Linux desktops ship
+        # hands back an empty 100x30 window for the native dialog, so Qt's own
+        # (themed) dialog is used instead.
         path, _ = QFileDialog.getOpenFileName(
-            self, tr("file_pick_title"), "", f"{tr('all_files')} (*)"
+            self,
+            tr("file_pick_title"),
+            "",
+            f"{tr('all_files')} (*)",
+            "",
+            QFileDialog.Option.DontUseNativeDialog,
         )
         if path:
             await self.add_jobs_from_file(path)
@@ -205,7 +213,12 @@ class MainWindow(QWidget):
             return
 
         path, _ = QFileDialog.getSaveFileName(
-            self, tr("export_dialog_title"), "export_queue_link.txt", f"{tr('all_files')} (*)"
+            self,
+            tr("export_dialog_title"),
+            "export_queue_link.txt",
+            f"{tr('all_files')} (*)",
+            "",
+            QFileDialog.Option.DontUseNativeDialog,
         )
 
         if not path:
