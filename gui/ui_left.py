@@ -2,91 +2,42 @@ from pathlib import Path
 
 from PyQt6.QtGui import QIntValidator
 from PyQt6.QtWidgets import (
-    QWidget,
-    QVBoxLayout,
-    QHBoxLayout,
-    QLineEdit,
-    QPushButton,
+    QGroupBox,
     QLabel,
-    QStackedWidget,
-    QFrame,
+    QLineEdit,
+    QHBoxLayout,
+    QPushButton,
+    QVBoxLayout,
+    QWidget,
 )
-from PyQt6.QtCore import Qt, QSettings, pyqtSignal
+from PyQt6.QtCore import Qt, QSettings
 
-from core.utils import CONFIG
 from core.i18n import tr
-from core.updater.version import read_current_version
-from gui.dialogs.about_dialog import AboutDialog
-from gui.dialogs.setting_dialog import SettingDialog
-from gui.dialogs.version_dialog import VersionDialog, display_version
+from core.utils import CONFIG
 from gui.theme import COMPACT_INPUT_STYLE, PREVIEW_META_STYLE
 from gui.video_preview import VideoPreview
-from gui.widgets import make_checkbox, make_help_button, make_radio_button
+from gui.widgets import make_checkbox
 
-# Shared width for the small buttons on the right of each input row
-# (Paste / Folder / Settings / About). Keeping them equal keeps the rows aligned.
+# Shared width for the small buttons on the right of each input row.
 SIDE_BUTTON_WIDTH = 90
 
 
 class LeftPanel(QWidget):
-    """
-    Left side of the main window:
-    - Mode selector (manual / auto) + input row (URL/paste or file/choose)
-    - Save path input + folder picker
-    - "Shutdown when done" / "Automatically add to queue" checkboxes
-    - Add Queue button
-    - Video preview (metadata + format radio buttons)
-    """
-
-    # Emitted when a newer build has been staged and the app should restart.
-    updateReady = pyqtSignal()
-    # Emitted after the Settings dialog closes (network toggle may have changed).
-    networkSettingsChanged = pyqtSignal()
+    """Left panel: source inputs, options and the preview."""
 
     def __init__(self, settings: QSettings, parent=None):
         super().__init__(parent)
 
         self.settings = settings
-        self._pending_update = None
-        # Set by MainWindow so the Settings dialog can show learned hosts.
-        self.network_manager = None
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         self.init_ui()
 
     def init_ui(self):
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setContentsMargins(6, 0, 6, 6)
+        layout.setSpacing(6)
 
-        # ================= MODE AREA =================
-        self.mode_area = QWidget()
-        mode_layout = QHBoxLayout(self.mode_area)
-        mode_layout.setContentsMargins(0, 0, 0, 0)
-        mode_layout.setSpacing(6)
-
-        mode_label = QLabel(tr("mode"))
-        self.rb_manual = make_radio_button(tr("mode_manual"))
-        self.rb_auto = make_radio_button(tr("mode_auto"))
-        self.rb_manual.setChecked(True)
-
-        mode_layout.addWidget(mode_label)
-        mode_layout.addWidget(self.rb_manual)
-        mode_layout.addWidget(self.rb_auto)
-        mode_layout.addStretch()
-
-        self.rb_manual.toggled.connect(self._on_mode_changed)
-        self.rb_auto.toggled.connect(self._on_mode_changed)
-
-        # ================= INPUT STACK =================
-        self.input_stack = QStackedWidget()
-        self.input_stack.setFrameShape(QFrame.Shape.NoFrame)
-        self.input_stack.setContentsMargins(0, 0, 0, 0)
-
-        # --- manual page ---
-        manual_page = QWidget()
-        manual_layout = QHBoxLayout(manual_page)
-        manual_layout.setContentsMargins(0, 0, 0, 0)
-        manual_layout.setSpacing(6)
-
+        # ================= SOURCE (URL + output folder) =================
         self.url_input = QLineEdit()
         self.url_input.setPlaceholderText(tr("url_placeholder"))
         self.url_input.setReadOnly(True)
@@ -95,39 +46,51 @@ class LeftPanel(QWidget):
         self.btn_paste = QPushButton(tr("paste"))
         self.btn_paste.setFixedWidth(SIDE_BUTTON_WIDTH)
 
-        manual_layout.addWidget(self.url_input, 1)
-        manual_layout.addWidget(self.btn_paste)
+        url_row = QWidget()
+        url_layout = QHBoxLayout(url_row)
+        url_layout.setContentsMargins(0, 0, 0, 0)
+        url_layout.setSpacing(6)
+        url_layout.addWidget(self.url_input, 1)
+        url_layout.addWidget(self.btn_paste)
 
-        # --- auto page ---
-        auto_page = QWidget()
-        auto_layout = QHBoxLayout(auto_page)
-        auto_layout.setContentsMargins(0, 0, 0, 0)
-        auto_layout.setSpacing(6)
+        self.path_input = QLineEdit()
+        default_path = CONFIG.get("download_path") or str(Path.home() / "Downloads")
+        saved_path = self.settings.value("save_path", "", type=str)
 
-        self.file_input = QLineEdit()
-        self.file_input.setPlaceholderText(tr("file_placeholder"))
-        self.file_input.setReadOnly(True)
-        self.file_input.setFixedHeight(29)
-        self.file_input.mousePressEvent = self._pick_file_for_event
+        # The saved path may come from another machine or a disconnected drive
+        # -> fall back to the configured/default folder.
+        if not saved_path or not Path(saved_path).is_absolute() or not Path(saved_path).exists():
+            saved_path = default_path
 
-        self.btn_pick_file = QPushButton(tr("file_pick"))
-        self.btn_pick_file.setFixedWidth(SIDE_BUTTON_WIDTH)
+        self.path_input.setPlaceholderText(tr("path_placeholder"))
+        self.path_input.setText(saved_path)
+        self.path_input.editingFinished.connect(self._save_path)
 
-        auto_layout.addWidget(self.file_input, 1)
-        auto_layout.addWidget(self.btn_pick_file)
+        self.btn_folder = QPushButton(tr("folder"))
+        self.btn_folder.setFixedWidth(SIDE_BUTTON_WIDTH)
 
-        self.input_stack.addWidget(manual_page)  # index 0 = manual
-        self.input_stack.addWidget(auto_page)    # index 1 = auto
+        path_row = QWidget()
+        path_layout = QHBoxLayout(path_row)
+        path_layout.setContentsMargins(0, 0, 0, 0)
+        path_layout.setSpacing(6)
+        path_layout.addWidget(self.path_input, 1)
+        path_layout.addWidget(self.btn_folder)
 
-        # ================= CHECKBOX SHUTDOWN + BUTTON SETTINGS =================
-        settings_row = QWidget()
-        settings_layout = QHBoxLayout(settings_row)
-        settings_layout.setContentsMargins(0, 0, 0, 0)
-        settings_layout.setSpacing(6)
+        self.btn_add = QPushButton(tr("add_queue"))
+        self.btn_add.setDisabled(True)
 
-        checkbox_shutdown_col = QVBoxLayout()
-        checkbox_shutdown_col.setContentsMargins(0, 0, 0, 0)
-        checkbox_shutdown_col.setSpacing(6)
+        # ================= OPTIONS =================
+        self.auto_queue_cb = make_checkbox(tr("auto_queue"))
+        self.auto_queue_cb.setChecked(
+            self.settings.value("auto_queue", False, type=bool)
+        )
+        self.auto_queue_cb.toggled.connect(self.on_auto_queue_toggled)
+
+        self.auto_mp3_cb = make_checkbox(tr("auto_mp3"))
+        self.auto_mp3_cb.setChecked(
+            self.settings.value("auto_mp3", False, type=bool)
+        )
+        self.auto_mp3_cb.toggled.connect(self.on_auto_mp3_toggled)
 
         self.shutdown_cb = make_checkbox(tr("shutdown_after_done"))
         self.shutdown_cb.setChecked(
@@ -150,144 +113,59 @@ class LeftPanel(QWidget):
         self.shutdown_delay_unit.setToolTip(tr("shutdown_delay_hint"))
 
         shutdown_row = QWidget()
-        shutdown_row_layout = QHBoxLayout(shutdown_row)
-        shutdown_row_layout.setContentsMargins(0, 0, 0, 0)
-        shutdown_row_layout.setSpacing(6)
-        shutdown_row_layout.addWidget(self.shutdown_cb)
-        shutdown_row_layout.addWidget(self.shutdown_delay)
-        shutdown_row_layout.addWidget(self.shutdown_delay_unit)
-        shutdown_row_layout.addStretch()
+        shutdown_layout = QHBoxLayout(shutdown_row)
+        shutdown_layout.setContentsMargins(0, 0, 0, 0)
+        shutdown_layout.setSpacing(6)
+        shutdown_layout.addWidget(self.shutdown_cb)
+        shutdown_layout.addWidget(self.shutdown_delay)
+        shutdown_layout.addWidget(self.shutdown_delay_unit)
+        shutdown_layout.addStretch()
 
-        checkbox_shutdown_col.addWidget(shutdown_row, 0, Qt.AlignmentFlag.AlignLeft)
-
-        self.btn_settings = QPushButton(tr("settings"))
-        self.btn_settings.setFixedWidth(SIDE_BUTTON_WIDTH)
-        self.btn_settings.clicked.connect(self.open_settings)
-
-        settings_layout.addLayout(checkbox_shutdown_col, 1)
-        settings_layout.addWidget(self.btn_settings)
-        settings_layout.setAlignment(self.btn_settings, Qt.AlignmentFlag.AlignTop)
-
-        # ================= CHECKBOX CONVERT MP3 + BUTTON SESSION =================
-        session_row = QWidget()
-        session_layout = QHBoxLayout(session_row)
-        session_layout.setContentsMargins(0, 0, 0, 0)
-        session_layout.setSpacing(6)
-
-        checkbox_convert_mp3_col = QVBoxLayout()
-        checkbox_convert_mp3_col.setContentsMargins(0, 0, 0, 0)
-        checkbox_convert_mp3_col.setSpacing(6)
-
-        self.auto_mp3_cb = make_checkbox(tr("auto_mp3"))
-        self.auto_mp3_cb.setChecked(
-            self.settings.value("auto_mp3", False, type=bool)
-        )
-        self.auto_mp3_cb.toggled.connect(self.on_auto_mp3_toggled)
-        
-        checkbox_convert_mp3_col.addWidget(self.auto_mp3_cb, 0, Qt.AlignmentFlag.AlignLeft)
-
-        self.btn_session = QPushButton(tr("session"))
-        self.btn_session.setFixedWidth(SIDE_BUTTON_WIDTH)
-
-        session_layout.addLayout(checkbox_convert_mp3_col, 1)
-        session_layout.addWidget(self.btn_session)
-        session_layout.setAlignment(self.btn_session, Qt.AlignmentFlag.AlignTop)
-        
-        # ================= CHECKBOX AUTO QUEUE + BUTTON ABOUT =================
-        about_row = QWidget()
-        about_layout = QHBoxLayout(about_row)
-        about_layout.setContentsMargins(0, 0, 0, 0)
-        about_layout.setSpacing(6)
-
-        checkbox_auto_queue_col = QVBoxLayout()
-        checkbox_auto_queue_col.setContentsMargins(0, 0, 0, 0)
-        checkbox_auto_queue_col.setSpacing(6)
-
-        self.auto_queue_cb = make_checkbox(tr("auto_queue"))
-        self.auto_queue_cb.setChecked(
-            self.settings.value("auto_queue", False, type=bool)
-        )
-        self.auto_queue_cb.toggled.connect(self.on_auto_queue_toggled)
-        
-        checkbox_auto_queue_col.addWidget(self.auto_queue_cb, 0, Qt.AlignmentFlag.AlignLeft)
-
-        self.btn_about = QPushButton(tr("about"))
-        self.btn_about.setFixedWidth(SIDE_BUTTON_WIDTH)
-
-        about_layout.addLayout(checkbox_auto_queue_col, 1)
-        about_layout.addWidget(self.btn_about)
-        about_layout.setAlignment(self.btn_about, Qt.AlignmentFlag.AlignTop)        
-
-        # ================= PATH AREA =================
-        path_area = QWidget()
-        path_layout = QHBoxLayout(path_area)
-        path_layout.setContentsMargins(0, 0, 0, 0)
-        path_layout.setSpacing(6)
-
-        self.btn_folder = QPushButton(tr("folder"))
-        self.btn_folder.setFixedWidth(SIDE_BUTTON_WIDTH)
-
-        self.path_input = QLineEdit()
-        default_path = CONFIG.get("download_path") or str(Path.home() / "Downloads")
-        saved_path = self.settings.value("save_path", "", type=str)
-
-        # The saved path may come from another machine or a disconnected drive
-        # -> fall back to the configured/default folder.
-        if not saved_path or not Path(saved_path).is_absolute() or not Path(saved_path).exists():
-            saved_path = default_path
-
-        self.path_input.setPlaceholderText(tr("path_placeholder"))
-        self.path_input.setText(saved_path)
-        self.path_input.editingFinished.connect(self._save_path)
-
-        path_layout.addWidget(self.path_input, 1)
-        path_layout.addWidget(self.btn_folder)
-
-        # ================= BUTTON ADD QUEUE =================
-        self.btn_add = QPushButton(tr("add_queue"))
-        self.btn_add.setDisabled(True)
-
-        # ================= LABEL META =================
         self._session_name = ""
         self.session_label = QLabel("")
         self.session_label.setStyleSheet(PREVIEW_META_STYLE)
-
-        self.version_label = QLabel("")
-        self.version_label.setStyleSheet(PREVIEW_META_STYLE)
-        self._refresh_version_label()
-
-        self.version_icon = make_help_button(self.open_version)
-
-        meta_row = QWidget()
-        meta_layout = QHBoxLayout(meta_row)
-        meta_layout.setContentsMargins(0, 0, 0, 0)
-        meta_layout.addWidget(self.session_label)
-        meta_layout.addStretch()
-        meta_layout.addWidget(self.version_label)
-        meta_layout.addWidget(self.version_icon)
 
         # ================= VIDEO PREVIEW =================
         self.preview = VideoPreview(CONFIG)
 
         # ================= ASSEMBLE =================
-        layout.addWidget(self.mode_area, 0)
-        layout.addWidget(self.input_stack, 0)
-        layout.addWidget(path_area, 0)
-        layout.addWidget(settings_row, 0)
-        layout.addWidget(session_row, 0)
-        layout.addWidget(about_row, 0)
-        layout.addWidget(self.btn_add, 0)
-        layout.addWidget(meta_row, 0)
-        layout.addWidget(self.preview, 1)
+        layout.addWidget(self._build_source_group(url_row, path_row), 0)
+        layout.addWidget(self._build_options_group(shutdown_row), 0)
+        layout.addWidget(self._build_preview_group(), 1)
 
         # events that only affect this panel's own widgets
         self.btn_folder.clicked.connect(self.pick_folder)
-        self.btn_pick_file.clicked.connect(self.pick_file)
-        self.btn_about.clicked.connect(self.open_about)
         self.url_input.textChanged.connect(lambda _=None: self._update_add_button())
-        self.file_input.textChanged.connect(lambda _=None: self._update_add_button())
         self.preview.formatChanged.connect(lambda _=None: self._update_add_button())
-        self._on_mode_changed(self.rb_manual.isChecked())
+        self._update_add_button()
+
+    # =========================
+    # GROUP BOXES
+    # =========================
+    def _build_source_group(self, url_row: QWidget, path_row: QWidget) -> QGroupBox:
+        self.source_group = QGroupBox(tr("group_source"))
+        group_layout = QVBoxLayout(self.source_group)
+        group_layout.addWidget(url_row)
+        group_layout.addSpacing(6)
+        group_layout.addWidget(path_row)
+        group_layout.addSpacing(6)
+        group_layout.addWidget(self.btn_add)
+        return self.source_group
+
+    def _build_options_group(self, shutdown_row: QWidget) -> QGroupBox:
+        self.options_group = QGroupBox(tr("group_options"))
+        group_layout = QVBoxLayout(self.options_group)
+        group_layout.addWidget(self.auto_queue_cb, 0, Qt.AlignmentFlag.AlignLeft)
+        group_layout.addWidget(self.auto_mp3_cb, 0, Qt.AlignmentFlag.AlignLeft)
+        group_layout.addWidget(shutdown_row, 0)
+        group_layout.addWidget(self.session_label, 0)
+        return self.options_group
+
+    def _build_preview_group(self) -> QGroupBox:
+        self.preview_group = QGroupBox(tr("group_preview"))
+        group_layout = QVBoxLayout(self.preview_group)
+        group_layout.addWidget(self.preview)
+        return self.preview_group
 
     # =========================
     # SAVE THE SELECTED PATH (for the next run)
@@ -336,55 +214,26 @@ class LeftPanel(QWidget):
             else ""
         )
 
-    def _refresh_version_label(self):
-        self.version_label.setText(
-            tr("version_label").format(version=display_version(read_current_version()))
-        )
-
     # =========================
     # UPDATE TEXT WHEN THE LANGUAGE CHANGES
     # =========================
     def retranslate(self):
-        self.file_input.setPlaceholderText(tr("file_placeholder"))
-        self.btn_pick_file.setText(tr("file_pick"))
+        self.source_group.setTitle(tr("group_source"))
+        self.options_group.setTitle(tr("group_options"))
+        self.preview_group.setTitle(tr("group_preview"))
         self.url_input.setPlaceholderText(tr("url_placeholder"))
         self.path_input.setPlaceholderText(tr("path_placeholder"))
         self.btn_paste.setText(tr("paste"))
         self.btn_folder.setText(tr("folder"))
-        self.btn_settings.setText(tr("settings"))
         self.btn_add.setText(tr("add_queue"))
-        self.btn_about.setText(tr("about"))
         self.auto_queue_cb.setText(tr("auto_queue"))
         self.auto_mp3_cb.setText(tr("auto_mp3"))
-        self.btn_session.setText(tr("session"))
         self._refresh_session_label()
-        self._refresh_version_label()
         self.shutdown_cb.setText(tr("shutdown_after_done"))
         self.shutdown_delay.setToolTip(tr("shutdown_delay_hint"))
         self.shutdown_delay_unit.setText(tr("shutdown_seconds"))
         self.shutdown_delay_unit.setToolTip(tr("shutdown_delay_hint"))
-        self.rb_manual.setText(tr("mode_manual"))
-        self.rb_auto.setText(tr("mode_auto"))
         self.preview.retranslate()
-
-    def open_settings(self):
-        SettingDialog(self, self.network_manager).exec()
-        self.networkSettingsChanged.emit()
-
-    def open_about(self):
-        AboutDialog(self).exec()
-
-    def open_version(self):
-        """Check for a new build; emit `updateReady` once one is staged."""
-        dialog = VersionDialog(self)
-        dialog.exec()
-        if dialog.staged_root is not None:
-            self._pending_update = (dialog.staged_root, dialog.staged_version)
-            self.updateReady.emit()
-
-    def take_pending_update(self):
-        pending, self._pending_update = self._pending_update, None
-        return pending
 
     # =========================
     # FOLDER PICKER
@@ -398,56 +247,12 @@ class LeftPanel(QWidget):
             self._save_path()
 
     # =========================
-    # FILE PICKER (add jobs from file)
-    # =========================
-    def _pick_file_for_event(self, event):
-        self.pick_file()
-
-    def pick_file(self):
-        """Open a file dialog and validate the chosen file as a link list."""
-        from PyQt6.QtWidgets import QFileDialog, QMessageBox
-        from core.utils import parse_link_file
-
-        path, _ = QFileDialog.getOpenFileName(
-            self,
-            tr("file_pick_title"),
-            "",
-            f"{tr('all_files')} (*)",
-        )
-        if not path:
-            return
-
-        _urls, error_code, error_detail = parse_link_file(path)
-
-        if error_code is not None:
-            message = tr(f"import_error_{error_code}")
-            if error_detail:
-                message = f"{message}\n\n{error_detail}"
-            QMessageBox.critical(self, tr("import_error_title"), message)
-            return
-
-        self.file_input.setText(path)
-        self.settings.setValue("import_file", path)
-        self._update_add_button()
-
-    # =========================
-    # MODE CHANGE (manual / auto)
-    # =========================
-    def _on_mode_changed(self, checked):
-        manual = self.rb_manual.isChecked()
-        self.input_stack.setCurrentIndex(0 if manual else 1)
-        self._update_add_button()
-
-    # =========================
     # UPDATE ADD-QUEUE BUTTON STATE
     # =========================
     def _update_add_button(self):
-        if self.rb_auto.isChecked():
-            self.btn_add.setEnabled(bool(self.file_input.text().strip()))
-            return
-
         self.btn_add.setEnabled(
-            bool(self.url_input.text().strip()) and self.preview.selected_choice() is not None
+            bool(self.url_input.text().strip())
+            and self.preview.selected_choice() is not None
         )
 
     # =========================
@@ -457,4 +262,3 @@ class LeftPanel(QWidget):
         self.preview.set_loading(show)
         if show:
             self.btn_add.setDisabled(True)
-

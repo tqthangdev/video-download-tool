@@ -1,11 +1,11 @@
 from PyQt6.QtWidgets import (
+    QGroupBox,
     QWidget,
     QVBoxLayout,
     QHBoxLayout,
     QListWidget,
     QListWidgetItem,
     QPushButton,
-    QLabel,
 )
 from PyQt6.QtCore import QSize, Qt, pyqtSignal
 
@@ -37,7 +37,7 @@ class RightPanel(QWidget):
 
     def init_ui(self):
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setContentsMargins(6, 0, 6, 6)
 
         # ================= BUTTON ROW (top) =================
         self.btn_start = QPushButton(tr("start"))
@@ -47,7 +47,7 @@ class RightPanel(QWidget):
 
         btn_row = QHBoxLayout()
         btn_row.setContentsMargins(0, 0, 0, 0)
-        btn_row.setSpacing(6)
+        btn_row.setSpacing(4)
         btn_row.addWidget(self.btn_start)
         btn_row.addWidget(self.btn_resume)
         btn_row.addWidget(self.btn_pause)
@@ -62,14 +62,19 @@ class RightPanel(QWidget):
         self._delegate.deleteRequested.connect(self.deleteRequested)
         self.queue_list.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
 
-        self.queue_label = QLabel(tr("queue"))
-
         self.row_buttons = QWidget()
         self.row_buttons.setLayout(btn_row)
 
-        layout.addWidget(self.queue_label)
-        layout.addWidget(self.row_buttons)
-        layout.addWidget(self.queue_list)
+        # The group title doubles as the queue header (it carries the count).
+        self.queue_group = QGroupBox(tr("queue"))
+        group_layout = QVBoxLayout(self.queue_group)
+        # group_layout.setContentsMargins(4, 1, 4, 4)
+        group_layout.setSpacing(4)
+        group_layout.addWidget(self.row_buttons)
+        group_layout.addSpacing(8)
+        group_layout.addWidget(self.queue_list)
+
+        layout.addWidget(self.queue_group)
 
         self.btn_clear.clicked.connect(self.clear_done)
         self._update_queue_label()
@@ -84,9 +89,9 @@ class RightPanel(QWidget):
     def _update_queue_label(self):
         count = self.queue_list.count()
         if count:
-            self.queue_label.setText(tr("queue_with_count").format(count=count))
+            self.queue_group.setTitle(tr("queue_with_count").format(count=count))
         else:
-            self.queue_label.setText(tr("queue"))
+            self.queue_group.setTitle(tr("queue"))
 
     def _find(self, key):
         for i in range(self.queue_list.count()):
@@ -177,6 +182,16 @@ class RightPanel(QWidget):
             if data.get("status") not in TERMINAL_STATUSES:
                 return False
         return True
+
+    def queue_urls(self) -> list[str]:
+        """URLs currently in the queue, in order and without duplicates."""
+        urls = []
+        for i in range(self.queue_list.count()):
+            data = self.queue_list.item(i).data(Qt.ItemDataRole.UserRole) or {}
+            url = data.get("url")
+            if url and url not in urls:
+                urls.append(url)
+        return urls
 
     def clear_done(self):
         for i in range(self.queue_list.count() - 1, -1, -1):

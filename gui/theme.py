@@ -136,6 +136,20 @@ QLineEdit:focus {
     border: 2px solid #4CAF50;
     background-color: #333333;
 }
+QGroupBox {
+    border: 1px solid #555555;
+    border-radius: 4px;
+    margin-top: 13px;
+    padding: 1px;
+    font-weight: bold;
+}
+QGroupBox::title {
+    subcontrol-origin: margin;
+    subcontrol-position: top left;
+    left: 6px;
+    padding: 0px 3px;
+    color: #9e9e9e;
+}
 """
 
 # Radio buttons with the app's custom indicator icons (checked/unchecked SVGs).
@@ -165,14 +179,6 @@ QCheckBox::indicator:checked {
     image: url("assets/checkbox-checked.svg");
 }
 """)
-
-# Border for the left panel's preview box (metadata + format picker).
-PREVIEW_PANEL_STYLE = """
-QWidget#video_preview {
-    background: transparent;
-    border: 1px solid #adadad;
-}
-"""
 
 # Format picker in the video preview (single combo box, white border like the
 # other inputs, shared thin scrollbar for the popup list).

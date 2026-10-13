@@ -7,24 +7,38 @@ from pathlib import Path
 
 from qasync import asyncSlot
 
-from PyQt6.QtGui import QCursor, QIcon
-from PyQt6.QtWidgets import QApplication, QDialog, QWidget, QHBoxLayout, QMessageBox, QPushButton
+from PyQt6.QtGui import QAction, QCursor, QIcon
+from PyQt6.QtWidgets import (
+    QApplication,
+    QDialog,
+    QFileDialog,
+    QHBoxLayout,
+    QMenuBar,
+    QMessageBox,
+    QPushButton,
+    QVBoxLayout,
+    QWidget,
+)
 from PyQt6.QtCore import QSettings, QTimer, Qt, QEvent
 
 from gui.ui_left import LeftPanel
 from gui.ui_right import RightPanel
+from gui.dialogs.about_dialog import AboutDialog
 from gui.dialogs.restore_dialog import RestoreDialog
 from gui.dialogs.session_dialog import SessionDialog
+from gui.dialogs.setting_dialog import SettingDialog
+from gui.dialogs.version_dialog import VersionDialog
 from gui.dialogs.import_result_dialog import ImportResultDialog
 from gui.cursor_utils import apply_pointer_cursors
 from gui.theme import MAIN_WINDOW_STYLE
 from gui.video_preview import fetch_thumbnail_bytes
 from core.logger import logger
-from core.i18n import tr, add_listener, set_lang
+from core.i18n import tr, add_listener, get_lang, set_lang
 from core.format_selector import build_choices, select_audio_format, select_default_format
 from core.job_manager import STATUS_DONE, Job
 from core.errors import ApplicationError
 from core.updater.installer import spawn_updater
+from core.utils import CONFIG, save_config
 
 
 class MainWindow(QWidget):
@@ -42,7 +56,6 @@ class MainWindow(QWidget):
         self.engine = engine
         self.settings = QSettings("VideoDownloadTool", "VideoDownloadTool")
 
-        from core.utils import CONFIG
         set_lang(CONFIG.get("language", "vi"))
 
         self.setWindowTitle(tr("app_title"))
@@ -55,6 +68,7 @@ class MainWindow(QWidget):
 
         self._video_info = None
         self._choices = []
+        self._pending_update = None
         self._closing = False
         self._shutdown_cancelled = False
         self._shutdown_seconds_left = 0
@@ -67,22 +81,24 @@ class MainWindow(QWidget):
     # UI SETUP
     # =========================
     def init_ui(self):
+        root = QVBoxLayout()
+        root.setContentsMargins(0, 0, 0, 0)
+        root.setSpacing(0)
+        root.addWidget(self._build_menu_bar())
+
         layout = QHBoxLayout()
 
         self.left = LeftPanel(self.settings)
-        self.left.network_manager = self.engine.network
         self.right = RightPanel()
 
         layout.addWidget(self.left, 3)
         layout.addWidget(self.right, 3)
-        self.setLayout(layout)
+        root.addLayout(layout)
+        self.setLayout(root)
 
         self.left.btn_paste.clicked.connect(self.on_paste_url)
         self.left.btn_add.clicked.connect(self.add_queue)
-        self.left.btn_session.clicked.connect(self.open_sessions)
         self.left.auto_mp3_cb.toggled.connect(self._on_auto_mp3_toggled)
-        self.left.updateReady.connect(self._on_update_ready)
-        self.left.networkSettingsChanged.connect(self._on_network_settings_changed)
 
         self.right.btn_start.clicked.connect(self.start_engine)
         self.right.btn_resume.clicked.connect(self.toggle_resume_engine)
@@ -96,6 +112,137 @@ class MainWindow(QWidget):
         add_listener(self._retranslate)
 
         QTimer.singleShot(100, self._start_restore)
+
+    # =========================
+    # MENU BAR
+    # =========================
+    def _build_menu_bar(self) -> QMenuBar:
+        bar = QMenuBar()
+        self.menu = bar.addMenu(tr("menu_title"))
+
+        self.act_import = QAction(tr("import_links"), self)
+        self.act_import.setShortcut("Ctrl+I")
+        self.act_import.triggered.connect(self.import_links)
+        self.menu.addAction(self.act_import)
+
+        self.act_export = QAction(tr("export_links"), self)
+        self.act_export.setShortcut("Ctrl+P")
+        self.act_export.triggered.connect(self.export_links)
+        self.menu.addAction(self.act_export)
+
+        self.menu.addSeparator()
+
+        self.menu_sessions = self.menu.addMenu(tr("sessions_title"))
+
+        self.act_session_new = QAction(tr("session_new"), self)
+        self.act_session_new.setShortcut("Ctrl+N")
+        self.act_session_new.triggered.connect(self._on_session_new)
+        self.menu_sessions.addAction(self.act_session_new)
+
+        # Filled on demand so it always reflects the stored sessions.
+        self.menu_session_list = self.menu_sessions.addMenu(tr("session_list"))
+        self.menu_session_list.aboutToShow.connect(self._populate_session_menu)
+
+        self.act_session_manage = QAction(tr("session_manage"), self)
+        self.act_session_manage.setShortcut("Ctrl+M")
+        self.act_session_manage.triggered.connect(self.open_sessions)
+        self.menu_sessions.addAction(self.act_session_manage)
+
+        self.menu_language = self.menu.addMenu(tr("language_label"))
+        self.act_lang = {}
+        for code in ("vi", "en"):
+            action = QAction(tr(f"lang_{code}"), self)
+            action.setCheckable(True)
+            action.triggered.connect(lambda _checked=False, c=code: self._set_language(c))
+            self.menu_language.addAction(action)
+            self.act_lang[code] = action
+        self._sync_language_checks()
+
+        self.menu.addSeparator()
+
+        self.act_settings = QAction(tr("settings"), self)
+        self.act_settings.setShortcut("Ctrl+S")
+        self.act_settings.triggered.connect(self.open_settings)
+        self.menu.addAction(self.act_settings)
+
+        self.act_about = QAction(tr("about"), self)
+        self.act_about.triggered.connect(self.open_about)
+        self.menu.addAction(self.act_about)
+
+        self.menu.addSeparator()
+
+        self.act_quit = QAction(tr("quit"), self)
+        self.act_quit.setShortcut("Ctrl+Q")
+        self.act_quit.triggered.connect(self.close)
+        self.menu.addAction(self.act_quit)
+
+        return bar
+
+    # =========================
+    # IMPORT / EXPORT LINKS
+    # =========================
+    @asyncSlot()
+    async def import_links(self):
+        path, _ = QFileDialog.getOpenFileName(
+            self, tr("file_pick_title"), "", f"{tr('all_files')} (*)"
+        )
+        if path:
+            await self.add_jobs_from_file(path)
+
+    def export_links(self):
+        urls = self.right.queue_urls()
+        if not urls:
+            self._show_message(tr("notify"), tr("export_empty"))
+            return
+
+        path, _ = QFileDialog.getSaveFileName(
+            self, tr("export_dialog_title"), "links.txt", "*.txt"
+        )
+        if not path:
+            return
+
+        try:
+            Path(path).write_text("\n".join(urls) + "\n", encoding="utf-8")
+        except OSError as exc:
+            self._show_message(
+                tr("error"), tr("export_failed").format(error=exc), critical=True
+            )
+            return
+
+        self._show_message(tr("notify"), tr("export_done").format(count=len(urls)))
+
+    # =========================
+    # LANGUAGE
+    # =========================
+    def _set_language(self, code: str):
+        if code == get_lang():
+            return
+        CONFIG["language"] = code
+        save_config(CONFIG)
+        set_lang(code)
+        self._sync_language_checks()
+
+    def _sync_language_checks(self):
+        for code, action in self.act_lang.items():
+            action.setChecked(get_lang() == code)
+
+    # =========================
+    # SETTINGS / ABOUT
+    # =========================
+    def open_settings(self):
+        SettingDialog(self, self.engine.network).exec()
+        self._on_network_settings_changed()
+
+    def open_about(self):
+        AboutDialog(self, on_check_version=self.open_version).exec()
+
+    def open_version(self):
+        """Check for a new build; once one is staged, apply it and restart."""
+        dialog = VersionDialog(self)
+        dialog.exec()
+        if dialog.staged_root is not None:
+            self._pending_update = (dialog.staged_root, dialog.staged_version)
+            asyncio.ensure_future(self._apply_pending_update())
 
     def _start_restore(self):
         # Ask first: only run restore_session when the user wants the previous
@@ -143,6 +290,20 @@ class MainWindow(QWidget):
 
     def _retranslate(self):
         self.setWindowTitle(tr("app_title"))
+        self.menu.setTitle(tr("menu_title"))
+        self.act_import.setText(tr("import_links"))
+        self.act_export.setText(tr("export_links"))
+        self.menu_sessions.setTitle(tr("sessions_title"))
+        self.act_session_new.setText(tr("session_new"))
+        self.menu_session_list.setTitle(tr("session_list"))
+        self.act_session_manage.setText(tr("session_manage"))
+        self.menu_language.setTitle(tr("language_label"))
+        for code, action in self.act_lang.items():
+            action.setText(tr(f"lang_{code}"))
+        self._sync_language_checks()
+        self.act_settings.setText(tr("settings"))
+        self.act_about.setText(tr("about"))
+        self.act_quit.setText(tr("quit"))
         self.left.retranslate()
         self.right.retranslate()
         self._update_buttons()
@@ -273,10 +434,6 @@ class MainWindow(QWidget):
     # =========================
     @asyncSlot()
     async def add_queue(self):
-        if self.left.rb_auto.isChecked():
-            await self.add_jobs_from_file(self.left.file_input.text().strip())
-            return
-
         url = self.left.url_input.text().strip()
         base_path = self.left.path_input.text().strip()
         choice = self._add_choice()
@@ -324,7 +481,7 @@ class MainWindow(QWidget):
             return
 
         if not path or not os.path.exists(path):
-            self._show_message(tr("error"), tr("file_empty"), critical=True)
+            self._show_message(tr("error"), tr("import_error_read"), critical=True)
             return
 
         from core.utils import parse_link_file
@@ -503,6 +660,19 @@ class MainWindow(QWidget):
         # Renames / switches happen inside the dialog, so resync the label.
         self._update_session_label()
         self._update_buttons()
+
+    def _populate_session_menu(self):
+        """List the stored sessions by id; picking one switches to it."""
+        self.menu_session_list.clear()
+        current = self.engine.session_id
+        for session in self.engine.list_sessions():
+            action = self.menu_session_list.addAction(session.id)
+            action.setCheckable(True)
+            action.setChecked(session.id == current)
+            action.setEnabled(session.id != current)
+            action.triggered.connect(
+                lambda _checked=False, sid=session.id: self._on_session_select(sid)
+            )
 
     async def _stop_for_session_change(self):
         """Selecting/removing a session must not fight an active download."""
@@ -698,14 +868,13 @@ class MainWindow(QWidget):
     # =========================
     # APPLY A STAGED UPDATE
     # =========================
-    @asyncSlot()
-    async def _on_update_ready(self):
+    async def _apply_pending_update(self):
         """Stop the engine, hand the swap to the updater, then exit.
 
         The staged build is already downloaded and verified; the updater waits
         for this process to end before replacing any file.
         """
-        pending = self.left.take_pending_update()
+        pending, self._pending_update = self._pending_update, None
         if not pending:
             return
 

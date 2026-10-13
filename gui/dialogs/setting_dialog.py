@@ -19,7 +19,7 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-from core.i18n import get_lang, set_lang, tr
+from core.i18n import tr
 from core.utils import CONFIG, save_config
 from gui.cursor_utils import apply_pointer_cursors
 from gui.dialogs.help_dialog import HelpDialog
@@ -66,24 +66,6 @@ class SettingDialog(QDialog):
 
         layout = QVBoxLayout(self)
         form = QFormLayout()
-
-        # ===== LANGUAGE COMBOBOX =====
-        self.cb_lang = make_combo()
-        self.cb_lang.addItem(tr("lang_vi"), "vi")
-        self.cb_lang.addItem(tr("lang_en"), "en")
-        idx = self.cb_lang.findData(get_lang())
-        self.cb_lang.setCurrentIndex(idx if idx >= 0 else 0)
-
-        lang_row = QWidget()
-        lang_layout = QHBoxLayout(lang_row)
-        lang_layout.setContentsMargins(0, 0, 0, 0)
-        lang_layout.setSpacing(4)
-        lang_layout.addWidget(self.cb_lang, 1)
-        lang_spacer = QWidget()
-        lang_spacer.setFixedWidth(24)
-        lang_layout.addWidget(lang_spacer)
-
-        form.addRow(tr("language_label"), lang_row)
 
         for label_key, key, desc_key in self.FIELDS:
             label = tr(label_key)
@@ -184,14 +166,12 @@ class SettingDialog(QDialog):
                 if text:
                     new_config[key] = text
 
-        new_config["language"] = self.cb_lang.currentData()
         if self.network_cb is not None:
             new_config["network_enabled"] = self.network_cb.isChecked()
 
         if save_config(new_config):
             CONFIG.clear()
             CONFIG.update(new_config)
-            set_lang(new_config["language"])
             self.accept()
         else:
             QMessageBox.critical(self, tr("error"), tr("save_error"))

@@ -28,7 +28,6 @@ from core.format_selector import (
 from core.i18n import tr
 from core.utils import format_size, get_resource_path
 from gui.theme import (
-    PREVIEW_PANEL_STYLE,
     LIVE_BADGE_STYLE,
     MANGA_TITLE_STYLE,
     PREVIEW_COMBO_STYLE,
@@ -86,18 +85,16 @@ class VideoPreview(QWidget):
 
     def _build_preview(self) -> QWidget:
         self.preview_panel = QWidget()
-        self.preview_panel.setObjectName("video_preview")
-        self.preview_panel.setStyleSheet(PREVIEW_PANEL_STYLE)
 
         outer = QVBoxLayout(self.preview_panel)
-        outer.setContentsMargins(6, 6, 6, 6)
-        outer.setSpacing(6)
+        outer.setContentsMargins(2, 0, 2, 2)
+        outer.setSpacing(2)
 
         # ===== METADATA =====
         meta = QWidget()
         meta_layout = QVBoxLayout(meta)
-        meta_layout.setContentsMargins(6, 6, 6, 6)
-        meta_layout.setSpacing(4)
+        meta_layout.setContentsMargins(2, 2, 2, 2)
+        meta_layout.setSpacing(2)
 
         line1 = QHBoxLayout()
         self.thumb = QLabel()
@@ -134,16 +131,16 @@ class VideoPreview(QWidget):
         meta_layout.addLayout(line2)
         outer.addWidget(meta)
 
-        # ===== FORMAT PICKER =====
-        formats = QWidget()
-        formats_layout = QVBoxLayout(formats)
-        formats_layout.setContentsMargins(6, 6, 6, 6)
-        formats_layout.setSpacing(6)
+        # ===== FORMAT PICKER (hidden until there is something to pick) =====
+        self.format_area = QWidget()
+        formats_layout = QVBoxLayout(self.format_area)
+        formats_layout.setContentsMargins(2, 2, 2, 2)
+        formats_layout.setSpacing(4)
 
         # ===== TYPE (Video / Audio) =====
         type_row = QHBoxLayout()
         type_row.setContentsMargins(0, 0, 0, 0)
-        type_row.setSpacing(10)
+        type_row.setSpacing(6)
 
         self.type_label = QLabel(tr("formats_label"))
         self.type_label.setStyleSheet(PREVIEW_META_STYLE)
@@ -172,8 +169,9 @@ class VideoPreview(QWidget):
         formats_layout.addLayout(type_row)
         formats_layout.addWidget(self.combo)
         formats_layout.addWidget(self.empty_label)
-        formats_layout.addStretch()
-        outer.addWidget(formats)
+        outer.addWidget(self.format_area)
+        outer.addStretch(1)
+        self.format_area.hide()
 
         return self.preview_panel
 
@@ -250,6 +248,7 @@ class VideoPreview(QWidget):
 
         self.combo.setVisible(bool(self._choices))
         self.empty_label.setVisible(not self._choices)
+        self.format_area.setVisible(bool(self._choices))
 
         if default is not None:
             target = default
@@ -306,6 +305,7 @@ class VideoPreview(QWidget):
             self._updating = False
 
         self.empty_label.hide()
+        self.format_area.hide()
         self.formatChanged.emit(None)
 
     def retranslate(self):
