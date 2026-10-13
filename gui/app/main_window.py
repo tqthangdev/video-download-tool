@@ -40,6 +40,10 @@ from core.errors import ApplicationError
 from core.updater.installer import spawn_updater
 from core.utils import CONFIG, save_config
 
+# Importing is one extraction per link, so a file above this many links asks
+# for confirmation before it starts.
+IMPORT_CONFIRM_THRESHOLD = 20
+
 
 class MainWindow(QWidget):
 
@@ -553,6 +557,13 @@ class MainWindow(QWidget):
             self._show_message(tr("import_error_title"), message, critical=True)
             return
 
+        # A long list takes a while (each link is extracted first), so the user
+        # gets to back out before anything starts.
+        if len(links) > IMPORT_CONFIRM_THRESHOLD and not self._confirm_import(
+            Path(path).name, len(links)
+        ):
+            return
+
         from gui.dialogs.add_jobs_dialog import AddJobsDialog
 
         modal = AddJobsDialog(self)
@@ -570,13 +581,20 @@ class MainWindow(QWidget):
         state = {"completed": 0, "success": [], "live": [], "duplicate": [], "error": []}
 
         async def process(url):
+            if modal.cancelled:
+                return
             try:
                 async with semaphore:
                     info = await loop.run_in_executor(None, self.engine.client.extract, url)
             except Exception as exc:
                 logger.error(f"[add_from_file] Skipped {url}: {exc}")
                 info = None
+                if modal.cancelled:
+                    return
                 state["error"].append({"title": "", "url": url, "reason": reason_extract})
+
+            if modal.cancelled:
+                return
 
             if info is not None and info.is_live:
                 # Live streams are recognized but not downloadable yet.
@@ -621,7 +639,7 @@ class MainWindow(QWidget):
         try:
             await asyncio.gather(*(process(url) for url in links))
         finally:
-            modal.close()
+            modal.finish()
             modal.deleteLater()
 
         self._update_buttons()
@@ -629,8 +647,20 @@ class MainWindow(QWidget):
         ImportResultDialog(result, self).exec()
 
     # =========================
-    # NON-MODAL MESSAGE BOX
+    # MESSAGE BOXES
     # =========================
+    def _confirm_import(self, name: str, count: int) -> bool:
+        """Ask before importing a file whose list will take a while."""
+        box = QMessageBox(self)
+        box.setWindowTitle(tr("import_confirm_title"))
+        box.setText(tr("import_confirm_text").format(name=name, count=count))
+        box.setIcon(QMessageBox.Icon.Question)
+        btn_yes = box.addButton(tr("yes"), QMessageBox.ButtonRole.YesRole)
+        btn_no = box.addButton(tr("no"), QMessageBox.ButtonRole.NoRole)
+        box.setDefaultButton(btn_no)
+        box.exec()
+        return box.clickedButton() is btn_yes
+
     def _show_message(self, title, text, critical=False):
         # While a modal dialog is open (e.g. the sessions manager), a box
         # parented to the main window would be hidden behind it, so attach to

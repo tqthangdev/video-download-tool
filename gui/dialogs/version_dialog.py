@@ -106,6 +106,12 @@ class VersionDialog(QDialog):
         )
         layout.addWidget(self.status_label)
 
+        self.progress = QProgressBar()
+        self.progress.setTextVisible(False)
+        self.progress.setFixedHeight(8)
+        self.progress.setVisible(False)
+        layout.addWidget(self.progress)
+
         # Release notes: a collapse/expand header with the full text below.
         self._notes = ""
         self._notes_expanded = False
@@ -120,12 +126,6 @@ class VersionDialog(QDialog):
         self.notes_area.setFixedHeight(120)
         self.notes_area.setVisible(False)
         layout.addWidget(self.notes_area)
-
-        self.progress = QProgressBar()
-        self.progress.setTextVisible(False)
-        self.progress.setFixedHeight(8)
-        self.progress.setVisible(False)
-        layout.addWidget(self.progress)
 
         self.buttons = QDialogButtonBox()
         self.btn_update = self.buttons.addButton(
