@@ -19,7 +19,6 @@ from __future__ import annotations
 
 import argparse
 import importlib.util
-import json
 import os
 import shutil
 import subprocess
@@ -202,29 +201,6 @@ def ensure_pyinstaller() -> None:
         raise SystemExit(1) from exc
 
 
-def seed_config() -> None:
-    """Write data/config.json from the app's defaults when it is missing.
-
-    data/config.json is runtime state (gitignored), so a fresh checkout has no
-    copy of it. Seed one from the app's own defaults so the build can still
-    bundle a starter config — the app copies it next to the executable on first
-    run.
-    """
-    config_path = ROOT / "data" / "config.json"
-    if config_path.exists():
-        return
-
-    sys.path.insert(0, str(ROOT))
-    from core.utils import DEFAULT_CONFIG
-
-    config_path.parent.mkdir(parents=True, exist_ok=True)
-    config_path.write_text(
-        json.dumps(DEFAULT_CONFIG, indent=4, ensure_ascii=False) + "\n",
-        encoding="utf-8",
-    )
-    print(f"Seeded {config_path.relative_to(ROOT)} from defaults")
-
-
 def _entry_point(dist_dir: Path, name: str, onefile: bool) -> Path:
     exe_name = f"{name}.exe" if sys.platform == "win32" else name
     return (ROOT / "dist" / exe_name) if onefile else (dist_dir / exe_name)
@@ -232,7 +208,6 @@ def _entry_point(dist_dir: Path, name: str, onefile: bool) -> Path:
 
 def build(name: str, onefile: bool, console: bool) -> int:
     ensure_pyinstaller()
-    seed_config()
 
     dist_dir = ROOT / "dist" / name
 
@@ -264,10 +239,6 @@ def build(name: str, onefile: bool, console: bool) -> int:
     assets = ROOT / "assets"
     if assets.is_dir():
         command += ["--add-data", f"{assets}{os.pathsep}assets"]
-
-    config = ROOT / "data" / "config.json"
-    if config.is_file():
-        command += ["--add-data", f"{config}{os.pathsep}."]
 
     # version.json is read at runtime (core/updater/version.py).
     version_file = ROOT / "version.json"

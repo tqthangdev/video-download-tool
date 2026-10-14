@@ -122,15 +122,12 @@ def get_config_path() -> Path:
 
 
 def load_config() -> dict:
-    """
-    Load configuration from the writable user data directory.
+    """Load configuration from the writable user data directory.
 
-    A bundled config.json is used as the initial template when no
-    user configuration exists yet.
+    The file is created from the app's defaults (`DEFAULT_CONFIG`) when it
+    does not exist yet.
     """
     config_path = get_config_path()
-    bundled_config_path = get_resource_path("config.json")
-
     config = DEFAULT_CONFIG.copy()
 
     # Existing user configuration
@@ -183,34 +180,8 @@ def load_config() -> dict:
             except Exception:
                 pass
 
-    # No user config yet
+    # No user config yet: write the app's defaults.
     else:
-        # If the bundled config exists, use it as the initial config.
-        if bundled_config_path.exists():
-            try:
-                with open(
-                    bundled_config_path,
-                    "r",
-                    encoding="utf-8",
-                ) as f:
-                    bundled_config = json.load(f)
-
-                config.update(
-                    {
-                        k: v
-                        for k, v in bundled_config.items()
-                        if k in DEFAULT_CONFIG and v not in (None, "")
-                    }
-                )
-
-            except Exception as e:
-                from core.logger import logger
-
-                logger.error(
-                    f"[config] Error reading bundled config.json: {e}"
-                )
-
-        # Create writable user config
         try:
             with open(config_path, "w", encoding="utf-8") as f:
                 json.dump(
