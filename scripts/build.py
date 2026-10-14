@@ -50,10 +50,10 @@ _UNBUNDLED_LIBS = (
 # must be present inside the bundle or the checkboxes/radio buttons would
 # silently render without their custom icons.
 _REQUIRED_ASSETS = (
-    "checkbox-checked.svg",
-    "checkbox-unchecked.svg",
-    "radio-checked.svg",
-    "radio-unchecked.svg",
+    "icons/checkbox/checkbox-checked.svg",
+    "icons/checkbox/checkbox-unchecked.svg",
+    "icons/radio/radio-checked.svg",
+    "icons/radio/radio-unchecked.svg",
 )
 
 
@@ -255,7 +255,7 @@ def build(name: str, onefile: bool, console: bool) -> int:
 
     if sys.platform == "win32" and not console:
         command.append("--windowed")
-        icon = ROOT / "assets" / "icon.ico"
+        icon = ROOT / "assets" / "app" / "icon.ico"
         if icon.exists():
             command += ["--icon", str(icon)]
 

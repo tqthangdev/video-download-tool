@@ -179,7 +179,7 @@ class VideoPreview(QWidget):
         self.loading_icon = QLabel()
         self.loading_icon.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
-        self.movie = QMovie(str(get_resource_path("assets/loading.gif")))
+        self.movie = QMovie(str(get_resource_path("assets/images/loading.gif")))
         self.movie.setScaledSize(QSize(LOADING_ICON_SIZE, LOADING_ICON_SIZE))
         self.loading_icon.setMovie(self.movie)
 

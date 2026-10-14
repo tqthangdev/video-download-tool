@@ -143,7 +143,14 @@ gui/
   panels/               the two panels, the preview and the queue delegate
   dialogs/              modal dialogs
   common/               theme (palettes), widget factories, helpers
-assets/                 icons/indicator SVGs (+ -light variants)
+assets/                 bundled assets, grouped by purpose:
+  app/                    window/taskbar icons (icon.png, icon.ico)
+  icons/                  indicator SVGs (+ -light variants):
+    checkbox/ radio/        QCheckBox / QRadioButton indicators
+    spin/                   QComboBox / QSpinBox / scrollbar arrows
+    help/                   "?" help button
+    trash.svg               queue row delete icon
+  images/                 loading.gif spinner
 data/ logs/             runtime state (config, sessions, learned hosts, logs)
 docs/                   this README, flow.md (behaviour spec), feedback.md
 scripts/                build.py + setup.sh / setup.ps1 (dev + first-run install)

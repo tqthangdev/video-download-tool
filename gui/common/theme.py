@@ -207,7 +207,7 @@ QComboBox::drop-down {{
     border: none;
 }}
 QComboBox::down-arrow {{
-    image: url("assets/spin-down{icon}.svg");
+    image: url("assets/icons/spin/spin-down{icon}.svg");
     width: 10px;
     height: 6px;
 }}
@@ -231,20 +231,20 @@ QSpinBox::up-button, QSpinBox::down-button {{
     width: 16px;
 }}
 QSpinBox::up-arrow {{
-    image: url("assets/spin-up{icon}.svg");
+    image: url("assets/icons/spin/spin-up{icon}.svg");
     width: 10px;
     height: 6px;
 }}
 QSpinBox::up-arrow:pressed {{
-    image: url("assets/spin-up-active.svg");
+    image: url("assets/icons/spin/spin-up-active.svg");
 }}
 QSpinBox::down-arrow {{
-    image: url("assets/spin-down{icon}.svg");
+    image: url("assets/icons/spin/spin-down{icon}.svg");
     width: 10px;
     height: 6px;
 }}
 QSpinBox::down-arrow:pressed {{
-    image: url("assets/spin-down-active.svg");
+    image: url("assets/icons/spin/spin-down-active.svg");
 }}
 QGroupBox {{
     border: 1px solid {p['group_border']};
@@ -265,20 +265,20 @@ QRadioButton::indicator {{
     height: 14px;
 }}
 QRadioButton::indicator:unchecked {{
-    image: url("assets/radio-unchecked{icon}.svg");
+    image: url("assets/icons/radio/radio-unchecked{icon}.svg");
 }}
 QRadioButton::indicator:checked {{
-    image: url("assets/radio-checked{icon}.svg");
+    image: url("assets/icons/radio/radio-checked{icon}.svg");
 }}
 QCheckBox::indicator {{
     width: 18px;
     height: 18px;
 }}
 QCheckBox::indicator:unchecked {{
-    image: url("assets/checkbox-unchecked{icon}.svg");
+    image: url("assets/icons/checkbox/checkbox-unchecked{icon}.svg");
 }}
 QCheckBox::indicator:checked {{
-    image: url("assets/checkbox-checked{icon}.svg");
+    image: url("assets/icons/checkbox/checkbox-checked{icon}.svg");
 }}
 QListWidget {{
     background-color: {p['surface']};
@@ -401,12 +401,12 @@ QScrollBar::add-line:vertical:hover, QScrollBar::sub-line:vertical:hover {{
     background: {p['scroll_handle']};
 }}
 QScrollBar::up-arrow:vertical {{
-    image: url("assets/spin-up{icon}.svg");
+    image: url("assets/icons/spin/spin-up{icon}.svg");
     width: 8px;
     height: 5px;
 }}
 QScrollBar::down-arrow:vertical {{
-    image: url("assets/spin-down{icon}.svg");
+    image: url("assets/icons/spin/spin-down{icon}.svg");
     width: 8px;
     height: 5px;
 }}

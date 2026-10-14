@@ -31,7 +31,7 @@ def main():
     # The whole look comes from one stylesheet, applied before any window exists.
     apply_theme(CONFIG.get("theme", "system"), app)
 
-    icon_path = _get_base_dir() / "assets" / "icon.png"
+    icon_path = _get_base_dir() / "assets" / "app" / "icon.png"
     if icon_path.exists():
         app.setWindowIcon(QIcon(str(icon_path)))
 

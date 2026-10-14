@@ -22,7 +22,7 @@ class QueueDelegate(QStyledItemDelegate):
     def __init__(self, parent=None):
         super().__init__(parent)
 
-        self.trash_pixmap = QPixmap(theme.asset("trash.svg"))
+        self.trash_pixmap = QPixmap(theme.asset("icons/trash.svg"))
 
         # `parent` must be the view so we can grab its viewport, enable mouse
         # tracking, and install an event filter on it.

@@ -2,7 +2,6 @@ import asyncio
 import os
 import platform
 import subprocess
-import sys
 from pathlib import Path
 
 from qasync import asyncSlot
@@ -38,7 +37,7 @@ from core.format_selector import build_choices, select_audio_format, select_defa
 from core.job_manager import STATUS_DONE, Job
 from core.errors import ApplicationError
 from core.updater.installer import spawn_updater
-from core.utils import CONFIG, save_config
+from core.utils import CONFIG, get_resource_path, save_config
 
 # Importing is one extraction per link, so a file above this many links asks
 # for confirmation before it starts.
@@ -50,8 +49,7 @@ class MainWindow(QWidget):
     def __init__(self, engine):
         super().__init__()
 
-        base = Path(sys.executable).parent if getattr(sys, "frozen", False) else Path(__file__).resolve().parent.parent
-        icon_path = base / "assets" / "icon.png"
+        icon_path = get_resource_path("assets/app/icon.png")
         if icon_path.exists():
             self.setWindowIcon(QIcon(str(icon_path)))
 

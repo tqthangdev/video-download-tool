@@ -113,8 +113,8 @@ def make_combo() -> QComboBox:
 def make_help_button(callback=None) -> QToolButton:
     """A "?" help button: gray icon, green while hovered."""
     button = _HoverIconButton(
-        QIcon(theme.asset("question.svg")),
-        QIcon(theme.asset("question-hover.svg")),
+        QIcon(theme.asset("icons/help/question.svg")),
+        QIcon(theme.asset("icons/help/question-hover.svg")),
     )
     button.setIconSize(QSize(HELP_ICON_SIZE, HELP_ICON_SIZE))
     button.setFixedSize(HELP_BUTTON_SIZE, HELP_BUTTON_SIZE)
