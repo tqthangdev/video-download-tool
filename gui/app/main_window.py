@@ -42,7 +42,7 @@ from core.utils import CONFIG, save_config
 
 # Importing is one extraction per link, so a file above this many links asks
 # for confirmation before it starts.
-IMPORT_CONFIRM_THRESHOLD = 20
+IMPORT_CONFIRM_THRESHOLD = 0
 
 
 class MainWindow(QWidget):
@@ -123,15 +123,22 @@ class MainWindow(QWidget):
         bar = QMenuBar()
         self.menu = bar.addMenu(tr("menu_title"))
 
+        self.menu_queue = self.menu.addMenu(tr("queue"))
+
         self.act_import = QAction(tr("import_links"), self)
         self.act_import.setShortcut("Ctrl+I")
         self.act_import.triggered.connect(self.import_links)
-        self.menu.addAction(self.act_import)
+        self.menu_queue.addAction(self.act_import)
 
         self.act_export = QAction(tr("export_links"), self)
         self.act_export.setShortcut("Ctrl+P")
         self.act_export.triggered.connect(self.export_links)
-        self.menu.addAction(self.act_export)
+        self.menu_queue.addAction(self.act_export)
+
+        self.act_clear_queue = QAction(tr("clear_queue"), self)
+        self.act_clear_queue.setShortcut("Ctrl+L")
+        self.act_clear_queue.triggered.connect(self.clear_queue)
+        self.menu_queue.addAction(self.act_clear_queue)
 
         self.menu.addSeparator()
 
@@ -242,6 +249,32 @@ class MainWindow(QWidget):
         self._show_message(tr("notify"), tr("export_done").format(count=len(urls)))
 
     # =========================
+    # CLEAR QUEUE
+    # =========================
+    @asyncSlot()
+    async def clear_queue(self):
+        urls = self.right.queue_urls()
+        if not urls:
+            self._show_message(tr("notify"), tr("export_empty"))
+            return
+
+        box = QMessageBox(self)
+        box.setWindowTitle(tr("clear_queue_confirm_title"))
+        box.setText(tr("clear_queue_confirm_text"))
+        box.setIcon(QMessageBox.Icon.Warning)
+        btn_yes = box.addButton(tr("yes"), QMessageBox.ButtonRole.YesRole)
+        btn_no = box.addButton(tr("no"), QMessageBox.ButtonRole.NoRole)
+        box.setDefaultButton(btn_no)
+        box.exec()
+
+        if box.clickedButton() is not btn_yes:
+            return
+
+        await self.engine.clear_queue()
+        self.right.clear_queue()
+        self._update_buttons()
+
+    # =========================
     # LANGUAGE
     # =========================
     def _set_language(self, code: str):
@@ -341,6 +374,7 @@ class MainWindow(QWidget):
         self.menu.setTitle(tr("menu_title"))
         self.act_import.setText(tr("import_links"))
         self.act_export.setText(tr("export_links"))
+        self.act_clear_queue.setText(tr("clear_queue"))
         self.menu_sessions.setTitle(tr("sessions_title"))
         self.act_session_new.setText(tr("session_new"))
         self.menu_session_list.setTitle(tr("session_list"))

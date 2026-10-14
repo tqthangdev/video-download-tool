@@ -194,6 +194,32 @@ class Engine(QObject):
 
         return target is not None or was_queued or was_running
 
+    async def clear_queue(self) -> int:
+        """Delete every job of the current session: queue, DB rows, scratch files.
+
+        Unlike del_job this wipes the whole session in one go, so any active
+        download is stopped first (it is re-queued as Paused, then deleted) and
+        the job identity is forgotten -- the session ends up empty.
+        """
+        if self.running:
+            await self.stop()
+
+        jobs = self.db.all_jobs()
+        self.clear_pending()
+        for job in jobs:
+            job.session_id = job.session_id or self.session_id
+
+        ids = [job.id for job in jobs if job.id is not None]
+        if ids:
+            await asyncio.get_running_loop().run_in_executor(
+                None, self.db.delete_bulk, ids
+            )
+
+        for job in jobs:
+            remove_job_temp_dir(job.save_path, job.session_id, job.id)
+
+        return len(jobs)
+
     # ------------------------------------------------------------------
     # RUN / STOP
     # ------------------------------------------------------------------
