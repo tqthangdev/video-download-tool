@@ -19,7 +19,7 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-from core.format_selector import (
+from core.download.format_selector import (
     AUDIO,
     VIDEO,
     FormatChoice,

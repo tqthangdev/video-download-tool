@@ -245,7 +245,7 @@ def build(name: str, onefile: bool, console: bool) -> int:
     if version_file.is_file():
         command += ["--add-data", f"{version_file}{os.pathsep}."]
 
-    # FFmpeg + Deno are bundled next to the app (core.ytdlp finds them).
+    # FFmpeg + Deno are bundled next to the app (core.download.ytdlp finds them).
     binaries = vendor_binaries()
     for binary in binaries:
         command += ["--add-binary", f"{binary}{os.pathsep}."]

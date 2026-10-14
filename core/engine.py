@@ -11,9 +11,12 @@ from pathlib import Path
 
 from PyQt6.QtCore import QObject, pyqtSignal
 
-from core.downloader import Downloader
+from core.download.downloader import Downloader
+from core.download.ytdlp import YtdlpClient, ffmpeg_available
 from core.errors import CANCELLED
-from core.job_manager import (
+from core.logger import logger
+from core.network.manager import NetworkManager
+from core.storage.job_manager import (
     RESTORABLE_STATUSES,
     STATUS_DONE,
     STATUS_FAILED,
@@ -23,9 +26,7 @@ from core.job_manager import (
     Job,
     JobManager,
 )
-from core.logger import logger
-from core.network.manager import NetworkManager
-from core.sessions import SessionStore, delete_session_files, session_db_path
+from core.storage.sessions import SessionStore, delete_session_files, session_db_path
 from core.utils import (
     CONFIG,
     DATA_DIR,
@@ -33,7 +34,6 @@ from core.utils import (
     remove_job_temp_dir,
     remove_session_temp_dirs,
 )
-from core.ytdlp import YtdlpClient, ffmpeg_available
 
 
 class Engine(QObject):
@@ -127,7 +127,7 @@ class Engine(QObject):
 
             if status == STATUS_DONE:
                 # Already finished: only re-queue if the output is gone (flow.md #32).
-                from core.downloader import verify_output
+                from core.download.downloader import verify_output
 
                 if existing.output_file and verify_output(existing.output_file):
                     return "already_downloaded"
@@ -358,7 +358,7 @@ class Engine(QObject):
                 self.processing_jobs.add(job.key)
 
             if self.running or job.key in self.processing_jobs:
-                from core.downloader import format_progress
+                from core.download.downloader import format_progress
 
                 self.progress.emit(job.key, format_progress(event))
 
@@ -454,7 +454,7 @@ class Engine(QObject):
     # SESSIONS
     #
     # Each session is a self-contained queue in its own database file
-    # (core/sessions.py). Switching opens that file; deleting removes it.
+    # (core/storage/sessions.py). Switching opens that file; deleting removes it.
     # ------------------------------------------------------------------
 
     def clear_pending(self):

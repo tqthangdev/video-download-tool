@@ -33,8 +33,8 @@ from gui.common.theme import THEMES, apply_theme, current_theme
 from gui.panels.video_preview import fetch_thumbnail_bytes
 from core.logger import logger
 from core.i18n import tr, add_listener, get_lang, set_lang
-from core.format_selector import build_choices, select_audio_format, select_default_format
-from core.job_manager import STATUS_DONE, Job
+from core.download.format_selector import build_choices, select_audio_format, select_default_format
+from core.storage.job_manager import STATUS_DONE, Job
 from core.errors import ApplicationError
 from core.updater.installer import spawn_updater
 from core.utils import CONFIG, get_resource_path, save_config

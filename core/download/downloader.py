@@ -8,9 +8,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from core.download.ytdlp import DownloadResult, YtdlpClient
 from core.errors import OUTPUT_MISSING, app_error
 from core.utils import expected_output_path, resolve_output_file
-from core.ytdlp import DownloadResult, YtdlpClient
 
 
 def verify_output(path) -> bool:

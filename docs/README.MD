@@ -136,6 +136,8 @@ run.py                  entry point (Qt + asyncio bridge, --update dispatch)
 start.sh / start.bat    launchers (run.py + scripts/setup.sh if needed)
 version.json            the running build's version
 core/                   headless backend (no Qt except engine.py)
+  download/             yt-dlp pipeline (extraction, download, format choices)
+  storage/              queue persistence (SQLite job store + session registry)
   network/              local CONNECT proxy fallback (stdlib only)
   updater/              version check + self-update
 gui/

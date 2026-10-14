@@ -213,7 +213,7 @@ class SessionStore:
             return
 
         groups, order, names = legacy
-        from core.job_manager import JobManager
+        from core.storage.job_manager import JobManager
 
         created: list[SessionInfo] = []
         for legacy_id in order:
@@ -244,7 +244,7 @@ class SessionStore:
 
     def _read_legacy(self):
         """Read the legacy db into ({legacy session id: [Job]}, order, names)."""
-        from core.job_manager import JobManager
+        from core.storage.job_manager import JobManager
 
         conn = sqlite3.connect(str(LEGACY_DB_PATH))
         conn.row_factory = sqlite3.Row

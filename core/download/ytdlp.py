@@ -20,6 +20,7 @@ from urllib.parse import urljoin, urlparse
 import requests
 import yt_dlp
 
+from core.download.format_selector import VIDEO, VideoInfo, normalize_formats
 from core.errors import (
     CANCELLED,
     EXTRACTOR,
@@ -29,7 +30,6 @@ from core.errors import (
     app_error,
     translate_ytdlp_error,
 )
-from core.format_selector import VIDEO, VideoInfo, normalize_formats
 from core.logger import logger
 from core.utils import (
     build_output_template,

@@ -25,7 +25,7 @@ from PyQt6.QtWidgets import (
 )
 
 from core.i18n import tr
-from core.sessions import SESSION_NAME_MAX_LENGTH
+from core.storage.sessions import SESSION_NAME_MAX_LENGTH
 from gui.common.cursor_utils import apply_pointer_cursors
 from gui.common.widgets import make_radio_button
 
