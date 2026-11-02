@@ -498,11 +498,12 @@ class MainWindow(QWidget):
         return select_default_format(self._choices, self.engine.config)
 
     def _add_choice(self):
-        """Format used when adding: MP3 when auto-convert is on, else the radio."""
-        if self.left.auto_mp3_cb.isChecked():
-            mp3 = select_audio_format(self._choices, self.engine.config)
-            if mp3 is not None:
-                return mp3
+        """Format used when adding: whatever the preview currently shows.
+
+        "Auto convert to mp3" only decides the *default* selection when a link
+        is loaded (and when the checkbox is toggled); a format the user picked
+        by hand in the preview must win over it.
+        """
         return self.left.preview.selected_choice()
 
     def _on_auto_mp3_toggled(self, checked):
