@@ -12,8 +12,11 @@ authors = [{ name = "tqthangdev" }]
 dependencies = [
     "yt-dlp",
     "requests",
+    "PySocks",
     "PyQt6",
     "qasync",
+    "playwright",
+    "nodriver",
 ]
 
 [project.optional-dependencies]

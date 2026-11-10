@@ -30,6 +30,10 @@ WORKER_OPTIONS = tuple(range(1, 11))
 VIDEO_QUALITY_OPTIONS = ("360p", "480p", "720p", "1080p", "1440p", "2160p")
 AUDIO_BITRATE_OPTIONS = ("128k", "192k", "320k")
 
+# Free-form settings whose empty value is meaningful (proxy off).
+CLEARABLE_KEYS = {"proxy_url"}
+PLACEHOLDERS = {"proxy_url": "socks5h://127.0.0.1:9050"}
+
 
 def _combo_options(key: str):
     """Choices for a settings key, or None when the field stays a text box."""
@@ -49,6 +53,7 @@ class SettingDialog(QDialog):
     FIELDS = [
         ("field_max_workers", "max_workers", "field_max_workers_desc"),
         ("field_download_path", "download_path", "field_download_path_desc"),
+        ("field_proxy_url", "proxy_url", "field_proxy_url_desc"),
         ("field_video_quality", "default_video_quality", "field_video_quality_desc"),
         ("field_audio_bitrate", "default_audio_bitrate", "field_audio_bitrate_desc"),
     ]
@@ -74,6 +79,7 @@ class SettingDialog(QDialog):
             if options is None:
                 # Free-form value (the download folder) stays a text box.
                 widget = QLineEdit(str(value))
+                widget.setPlaceholderText(PLACEHOLDERS.get(key, ""))
             else:
                 widget = make_combo()
                 # Keep an unrecognised stored value selectable instead of
@@ -106,11 +112,25 @@ class SettingDialog(QDialog):
 
         # ===== NETWORK (automatic fallback) =====
         self.network_cb = None
+        self.browser_cb = None
+        self.browser_ads_cb = None
         if self.network is not None:
             layout.addWidget(QLabel(tr("network_label")))
             self.network_cb = make_checkbox(tr("network_fallback"))
             self.network_cb.setChecked(bool(CONFIG.get("network_enabled", True)))
             layout.addWidget(self.network_cb, 0, Qt.AlignmentFlag.AlignLeft)
+
+            self.browser_cb = make_checkbox(tr("browser_fallback"))
+            self.browser_cb.setChecked(bool(CONFIG.get("browser_fallback", True)))
+            self.browser_cb.setToolTip(tr("browser_fallback_hint"))
+            layout.addWidget(self.browser_cb, 0, Qt.AlignmentFlag.AlignLeft)
+
+            self.browser_ads_cb = make_checkbox(tr("browser_block_ads"))
+            self.browser_ads_cb.setChecked(bool(CONFIG.get("browser_block_ads", True)))
+            self.browser_ads_cb.setToolTip(tr("browser_block_ads_hint"))
+            self.browser_ads_cb.setEnabled(self.browser_cb.isChecked())
+            self.browser_cb.toggled.connect(self.browser_ads_cb.setEnabled)
+            layout.addWidget(self.browser_ads_cb, 0, Qt.AlignmentFlag.AlignLeft)
 
             layout.addWidget(QLabel(tr("network_learned")))
             self.network_list = QListWidget()
@@ -160,11 +180,15 @@ class SettingDialog(QDialog):
                 new_config[key] = widget.currentData()
             else:
                 text = widget.text().strip()
-                if text:
+                if text or key in CLEARABLE_KEYS:
                     new_config[key] = text
 
         if self.network_cb is not None:
             new_config["network_enabled"] = self.network_cb.isChecked()
+
+        if self.browser_cb is not None:
+            new_config["browser_fallback"] = self.browser_cb.isChecked()
+            new_config["browser_block_ads"] = self.browser_ads_cb.isChecked()
 
         if save_config(new_config):
             CONFIG.clear()

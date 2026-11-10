@@ -113,6 +113,12 @@ DEFAULT_CONFIG = {
     "cookies_file": "",
     "cookies_from_browser": "",
     "network_enabled": True,
+    "proxy_mode": "auto",
+    "proxy_url": "",
+    "tor_timeout": 90,
+    "browser_fallback": True,
+    "browser_block_ads": True,
+    "browser_timeout": 30,
 }
 
 

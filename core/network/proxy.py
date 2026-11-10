@@ -89,11 +89,14 @@ class SmartProxy:
 
     async def stop(self) -> None:
         server, self._server = self._server, None
+        # Cancel live tunnels first: on modern Python, wait_closed() waits for
+        # every handler, and an open browser connection can otherwise keep the
+        # proxy from shutting down.
+        for task in list(self._tasks):
+            task.cancel()
         if server is not None:
             server.close()
             await server.wait_closed()
-        for task in list(self._tasks):
-            task.cancel()
         if self._tasks:
             await asyncio.gather(*self._tasks, return_exceptions=True)
 

@@ -16,6 +16,7 @@ from core.download.ytdlp import YtdlpClient, ffmpeg_available
 from core.errors import CANCELLED
 from core.logger import logger
 from core.network.manager import NetworkManager
+from core.network.tor import TorManager
 from core.storage.job_manager import (
     RESTORABLE_STATUSES,
     STATUS_DONE,
@@ -42,6 +43,8 @@ class Engine(QObject):
     # Emitted whenever the run state changes on its own (queue finished or a
     # worker crashed) so the UI can resync its buttons without a manual pause.
     finished = pyqtSignal()
+    # Tor could not be started or stopped bootstrapping (reason).
+    tor_failed = pyqtSignal(str)
 
     def __init__(self, max_workers=3, config: dict | None = None, session_id: str | None = None):
         super().__init__()
@@ -62,7 +65,14 @@ class Engine(QObject):
             enabled=bool(self.config.get("network_enabled", True)),
             routing_path=DATA_DIR / "network.json",
         )
-        self.client = YtdlpClient(self.config)
+        # Tor SOCKS (core.network.tor): always-on mode starts it at launch;
+        # auto mode starts it on demand for a blocked link only.
+        self.tor = TorManager(
+            data_dir=DATA_DIR / "tor",
+            on_ready=self._on_tor_ready,
+            on_failed=self._on_tor_failed,
+        )
+        self.client = YtdlpClient(self.config, tor=self.tor)
         self.downloader = Downloader(self.client)
 
         self.queue: asyncio.Queue[Job] = asyncio.Queue()
@@ -79,21 +89,61 @@ class Engine(QObject):
     # ------------------------------------------------------------------
     # NETWORK FALLBACK
     # ------------------------------------------------------------------
+    def _proxy_mode(self) -> str:
+        mode = str(self.config.get("proxy_mode", "auto")).strip().lower()
+        return mode if mode in ("auto", "on", "off") else "auto"
+
     def start_network(self) -> None:
-        """Start the local fallback proxy (no-op when disabled)."""
+        """Start the local fallback proxy, and Tor only in always-on mode."""
         if self.network.start():
             self.client.set_proxy(self.network.proxy_url)
         else:
             self.client.set_proxy(None)
+        if self._proxy_mode() == "on":
+            self.start_tor()
 
     def stop_network(self) -> None:
+        self.stop_tor()
         self.network.stop()
         self.client.set_proxy(None)
+
+    def start_tor(self) -> bool:
+        """Start Tor unless an explicit proxy overrides it."""
+        if self.client.configured_proxy():
+            logger.info("[Tor] explicit proxy configured; Tor is not started")
+            return False
+        return self.tor.start()
+
+    def stop_tor(self) -> None:
+        self.tor.stop()
+        self.client.set_tor_proxy(None)
+
+    def set_proxy_mode(self, mode: str) -> bool:
+        """Switch Auto/On/Off at runtime; returns whether Tor is running."""
+        mode = mode if mode in ("auto", "on", "off") else "auto"
+        if mode == "on":
+            return self.start_tor()
+        # Auto starts Tor on demand; Off never starts it.
+        self.stop_tor()
+        return False
+
+    def _on_tor_ready(self, proxy_url: str) -> None:
+        logger.info("[Tor] attached to yt-dlp at %s", proxy_url)
+        self.client.set_tor_proxy(proxy_url)
+
+    def _on_tor_failed(self, reason: str) -> None:
+        logger.warning("[Tor] unavailable: %s", reason)
+        self.tor_failed.emit(reason)
 
     def apply_network_settings(self) -> None:
         """Re-read the config after the Settings dialog changed it."""
         self.network.set_enabled(bool(self.config.get("network_enabled", True)))
         self.client.set_proxy(self.network.proxy_url if self.network.running else None)
+        self.client.set_tor_proxy(self.tor.proxy_url if self.tor.running else None)
+        # On-demand (auto) starts Tor from the extraction worker; only an
+        # always-on preference needs it started here.
+        if self._proxy_mode() == "on":
+            self.start_tor()
 
     # ------------------------------------------------------------------
     # QUEUE MANAGEMENT

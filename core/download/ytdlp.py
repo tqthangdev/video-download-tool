@@ -12,6 +12,9 @@ import html
 import os
 import re
 import shutil
+import threading
+import time
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Optional
@@ -22,8 +25,12 @@ import yt_dlp
 
 from core.download.format_selector import VIDEO, VideoInfo, normalize_formats
 from core.errors import (
+    BLOCKED,
     CANCELLED,
     EXTRACTOR,
+    GEO,
+    HTTP,
+    NETWORK,
     OUTPUT_MISSING,
     UNSUPPORTED,
     ApplicationError,
@@ -124,6 +131,25 @@ _ASSET_PATH_RE = re.compile(
 # Path shapes that normally mean "this is a player page".
 _PLAYER_PATH_RE = re.compile(r"/(?:play|embed|player|watch|e|v|videos?\b)", re.IGNORECASE)
 
+# Related-video cards ship their preview clip in one of these attributes. The
+# card is not the page's main stream, so its URL must not become a candidate.
+_RELATED_MEDIA_ATTR_RE = re.compile(
+    r"""\bdata-(?:mediabook|preview|trailer|teaser)\s*=\s*(?:"[^"]*"|'[^']*')""",
+    re.IGNORECASE,
+)
+_RELATED_MEDIA_VALUE_RE = re.compile(
+    r"""\bdata-(?:mediabook|preview|trailer|teaser)\s*=\s*["']([^"']+)["']""",
+    re.IGNORECASE,
+)
+# A player that is built in JavaScript: no media URL in the HTML, only a
+# container the site's script fills in. Such pages need the browser fallback.
+_JS_PLAYER_RE = re.compile(
+    r"""id\s*=\s*["']video-player(?:-area)?["']"""
+    r"""|data-mpu\s*="""
+    r"""|class\s*=\s*["'][^"']*\bresponsive-player\b""",
+    re.IGNORECASE,
+)
+
 # Metadata read straight from the page, used when no extractor could give us
 # any (which is exactly when the media scan kicks in).
 _OG_TITLE_RE = re.compile(
@@ -163,22 +189,140 @@ class DownloadResult:
     error: Optional[ApplicationError] = None
 
 
+# Same variable name as the server build, so a shell can override the proxy
+# stored in config.json without editing the file.
+PROXY_ENV = "YTDLP_PROXY"
+
+# A browser-resolved manifest is reused for this long: the preview and the
+# download then share one browser run. After it expires (or a download fails
+# with a network error) the URL is resolved again.
+BROWSER_MANIFEST_TTL = 5 * 60.0
+
+
 class YtdlpClient:
     """Thin, blocking wrapper around yt_dlp.YoutubeDL."""
 
-    def __init__(self, config: dict, proxy_url: str | None = None):
+    def __init__(
+        self,
+        config: dict,
+        proxy_url: str | None = None,
+        tor=None,
+    ):
         self.config = config
-        # Local fallback proxy (core.network); empty when the fallback is off.
-        self.proxy_url = proxy_url or None
+        # Local fallback proxy (core.network); used only when no explicit
+        # proxy is configured.
+        self._fallback_proxy_url = proxy_url or None
+        # Tor SOCKS listener started by the app (core.network.tor).
+        self._tor_proxy_url: str | None = None
+        self.tor = tor
+
+        # Auto mode is per-link: only URLs that failed once use Tor. The flag
+        # is thread-local so parallel downloads do not switch each other.
+        self._local = threading.local()
+        self._tor_urls: set[str] = set()
+        self._tor_urls_lock = threading.Lock()
+
+        # page url -> (deadline, manifest url, referer) for browser-resolved URLs.
+        self._manifest_cache: dict[str, tuple[float, str, str]] = {}
+        self._manifest_cache_lock = threading.Lock()
 
     def set_proxy(self, proxy_url: str | None) -> None:
-        """Point yt-dlp/requests at the local proxy (or None for direct)."""
-        self.proxy_url = proxy_url or None
+        """Point yt-dlp/requests at the local fallback proxy (or None)."""
+        self._fallback_proxy_url = proxy_url or None
+
+    def set_tor_proxy(self, proxy_url: str | None) -> None:
+        """Attach/detach the Tor listener started by the app."""
+        self._tor_proxy_url = proxy_url or None
+
+    def _proxy_mode(self) -> str:
+        mode = str(self.config.get("proxy_mode", "auto")).strip().lower()
+        return mode if mode in ("auto", "on", "off") else "auto"
+
+    def _use_tor(self) -> bool:
+        mode = self._proxy_mode()
+        if mode == "on":
+            return True
+        if mode == "off":
+            return False
+        return bool(getattr(self._local, "use_tor", False))
+
+    @contextmanager
+    def _tor_scope(self, enabled: bool):
+        previous = getattr(self._local, "use_tor", None)
+        self._local.use_tor = bool(enabled)
+        try:
+            yield
+        finally:
+            if previous is None:
+                self._local.__dict__.pop("use_tor", None)
+            else:
+                self._local.use_tor = previous
+
+    def _requires_tor(self, url: str) -> bool:
+        if self._proxy_mode() != "auto" or self.configured_proxy():
+            return False
+        key = (url or "").strip()
+        with self._tor_urls_lock:
+            return key in self._tor_urls
+
+    def _mark_tor(self, url: str, info=None) -> None:
+        keys = {(url or "").strip()}
+        webpage = getattr(info, "webpage_url", None) if info is not None else None
+        if webpage:
+            keys.add(webpage.strip())
+        with self._tor_urls_lock:
+            self._tor_urls.update(keys)
+
+    def _ensure_tor(self) -> bool:
+        """Start Tor on demand and wait for its SOCKS listener."""
+        if self.tor is None:
+            return False
+        try:
+            timeout = float(self.config.get("tor_timeout", 90))
+        except (TypeError, ValueError):
+            timeout = 90.0
+        proxy = self.tor.start_and_wait(timeout)
+        if not proxy:
+            logger.warning("[Tor] could not start")
+            return False
+        self.set_tor_proxy(proxy)
+        return True
+
+    def _should_retry_with_tor(self, err: ApplicationError) -> bool:
+        if self._proxy_mode() != "auto":
+            return False
+        if self.configured_proxy() or self._use_tor():
+            return False
+        if err.code in (NETWORK, BLOCKED, GEO):
+            return True
+        return bool(getattr(self._local, "scan_network_failed", False))
+
+    def configured_proxy(self) -> str | None:
+        """Explicit proxy: `YTDLP_PROXY`, then `proxy_url` from config.
+
+        Tor runs a SOCKS listener at 127.0.0.1:9050, so
+        `socks5h://127.0.0.1:9050` sends both DNS and traffic through it.
+        """
+        env_proxy = (os.environ.get(PROXY_ENV) or "").strip()
+        if env_proxy:
+            return env_proxy
+        return str(self.config.get("proxy_url") or "").strip() or None
+
+    @property
+    def proxy_url(self) -> str | None:
+        """The proxy in effect: explicit, Tor (when in scope), then fallback."""
+        explicit = self.configured_proxy()
+        if explicit:
+            return explicit
+        if self._use_tor():
+            return self._tor_proxy_url or self._fallback_proxy_url
+        return self._fallback_proxy_url
 
     def _requests_proxies(self) -> dict | None:
-        if not self.proxy_url:
+        proxy = self.proxy_url
+        if not proxy:
             return None
-        return {"http": self.proxy_url, "https": self.proxy_url}
+        return {"http": proxy, "https": proxy}
 
     def _get_content_length(
         self,
@@ -283,6 +427,32 @@ class YtdlpClient:
     # ------------------------------------------------------------------
 
     def extract(self, url: str) -> VideoInfo:
+        """Extract metadata + formats, using Tor only if the link is blocked."""
+        self._local.scan_network_failed = False
+        mode = self._proxy_mode()
+        if mode == "on":
+            self._ensure_tor()
+        use_tor = mode == "auto" and self._requires_tor(url)
+        if use_tor and not self._ensure_tor():
+            use_tor = False
+
+        with self._tor_scope(use_tor):
+            try:
+                return self._extract_once(url)
+            except ApplicationError as err:
+                if not self._should_retry_with_tor(err):
+                    raise
+                if not self._ensure_tor():
+                    raise
+
+                logger.info(f"[Tor] retrying blocked link through Tor: {url}")
+                self._local.scan_network_failed = False
+                with self._tor_scope(True):
+                    info = self._extract_once(url)
+                self._mark_tor(url, info)
+                return info
+
+    def _extract_once(self, url: str) -> VideoInfo:
         """Extract metadata + formats without downloading (flow.md #6)."""
         try:
             video, video_id = self._extract_with_ytdlp(url)
@@ -377,6 +547,7 @@ class YtdlpClient:
 
     def _fetch_page(self, url: str) -> Optional[tuple[str, str]]:
         """Download an HTML page; returns (final url after redirects, text)."""
+        self._local.fetch_error = None
         try:
             response = requests.get(
                 url,
@@ -387,6 +558,7 @@ class YtdlpClient:
             )
             response.raise_for_status()
         except Exception as exc:
+            self._local.fetch_error = exc
             logger.debug(f"[scan] could not fetch page {url}: {exc}")
             return None
 
@@ -398,6 +570,7 @@ class YtdlpClient:
     def _media_candidates(html: str, page_url: str, video_id=None) -> list[str]:
         """Every media URL found in the document (including inside scripts)."""
         text = html.replace("\\/", "/")  # JS-escaped slashes
+        text = _RELATED_MEDIA_ATTR_RE.sub("", text)  # related-card previews
 
         found = list(_MEDIA_URL_RE.findall(text))
         found += [urljoin(page_url, m) for m in _RELATIVE_MEDIA_RE.findall(text)]
@@ -411,6 +584,16 @@ class YtdlpClient:
 
         unique = list(dict.fromkeys(found))
         return sorted(unique, key=rank)[:_MAX_CANDIDATES]
+
+    @staticmethod
+    def _related_preview_urls(page_html: str) -> set[str]:
+        """Preview clips embedded in related-video cards, never the main stream."""
+        values = _RELATED_MEDIA_VALUE_RE.findall(page_html)
+        return {html.unescape(value.strip()) for value in values if value.strip()}
+
+    @staticmethod
+    def _is_js_player_page(page_html: str) -> bool:
+        return bool(_JS_PLAYER_RE.search(page_html))
 
     @staticmethod
     def _page_metadata(html_text: str) -> dict:
@@ -520,7 +703,13 @@ class YtdlpClient:
                 return file_url
         return None
 
-    def _collect_manifests(self, page_html: str, page_url: str, video_id=None) -> list[tuple[str, str]]:
+    def _collect_manifests(
+        self,
+        page_html: str,
+        page_url: str,
+        video_id=None,
+        embeds: list[str] | None = None,
+    ) -> list[tuple[str, str]]:
         """Media manifests reachable from a page, with the page they were seen on.
 
         Covers the page itself plus one level of the player/embed pages it
@@ -528,7 +717,7 @@ class YtdlpClient:
         """
         manifests = [(url, page_url) for url in self._media_candidates(page_html, page_url, video_id)]
 
-        for embed_url in self._embed_candidates(page_html, page_url):
+        for embed_url in (embeds if embeds is not None else self._embed_candidates(page_html, page_url)):
             fetched = self._fetch_page(embed_url)
             if not fetched:
                 continue
@@ -581,11 +770,37 @@ class YtdlpClient:
     def _scan_page_for_media(self, page_url: str, video_id=None, base: Optional[VideoInfo] = None) -> Optional[VideoInfo]:
         """Find the real stream by scanning the page (and the players it loads)."""
         fetched = self._fetch_page(page_url)
-        if not fetched:
-            return None
-        _, page = fetched
+        self._local.scan_network_failed = self._local.fetch_error is not None
+        page = ""
+        embeds = []
+        related_previews: set[str] = set()
+        browser_tried = False
+        resolved = None
 
-        resolved = self._resolve_manifest(self._collect_manifests(page, page_url, video_id))
+        if fetched:
+            _, page = fetched
+            embeds = self._embed_candidates(page, page_url)
+            related_previews = self._related_preview_urls(page)
+
+            # A JavaScript player has no media URL in the HTML; let the browser
+            # run before trusting media URLs found elsewhere on the page.
+            if self._is_js_player_page(page):
+                browser_tried = True
+                resolved = self._browser_manifest(page_url, related_previews)
+
+            if resolved is None:
+                resolved = self._resolve_manifest(
+                    self._collect_manifests(page, page_url, video_id, embeds=embeds)
+                )
+
+        # A static fetch can fail while a real browser still loads the page
+        # (cold proxy circuit, JS challenge); try the browser in both cases.
+        if resolved is None:
+            should_try_browser = (
+                self._has_player_markup(page, embeds) if page else True
+            )
+            if should_try_browser and not browser_tried:
+                resolved = self._browser_manifest(page_url, related_previews)
         if resolved is None:
             logger.info("[scan] no media manifest with resolvable quality found")
             return None
@@ -612,17 +827,138 @@ class YtdlpClient:
 
     def _refresh_manifest(self, page_url: str, fmt: dict) -> Optional[tuple[str, str]]:
         """Re-resolve the manifest for a scanned job (its URL may have expired)."""
+        cached = self._cached_manifest(
+            page_url, expected_url=fmt.get("source_url")
+        )
+        if cached is not None:
+            logger.info("[scan] reusing cached manifest for download")
+            return cached
+
         fetched = self._fetch_page(page_url)
-        if not fetched:
+        page = ""
+        embeds = []
+        related_previews: set[str] = set()
+        browser_tried = False
+        resolved = None
+
+        if fetched:
+            _, page = fetched
+            embeds = self._embed_candidates(page, page_url)
+            related_previews = self._related_preview_urls(page)
+
+            if self._is_js_player_page(page):
+                browser_tried = True
+                resolved = self._browser_manifest(page_url, related_previews)
+
+            if resolved is None:
+                candidates = self._collect_manifests(page, page_url, embeds=embeds)
+                prefer_host = urlparse(fmt.get("source_url") or "").netloc or None
+                if prefer_host:
+                    candidates.sort(key=lambda entry: 0 if urlparse(entry[0]).netloc == prefer_host else 1)
+                resolved = self._resolve_manifest(candidates, wanted_id=fmt.get("format_id"))
+
+        if resolved is None:
+            should_try_browser = (
+                self._has_player_markup(page, embeds) if page else True
+            )
+            if should_try_browser and not browser_tried:
+                resolved = self._browser_manifest(page_url, related_previews)
+        return resolved
+
+    def _cached_manifest(
+        self,
+        page_url: str,
+        expected_url: Optional[str] = None,
+    ) -> Optional[tuple[str, str]]:
+        """A browser manifest still inside its TTL (and matching the format)."""
+        key = (page_url or "").strip()
+        now = time.monotonic()
+        with self._manifest_cache_lock:
+            entry = self._manifest_cache.get(key)
+            if entry is None:
+                return None
+            deadline, url, referer = entry
+            if now >= deadline:
+                self._manifest_cache.pop(key, None)
+                return None
+        if expected_url and url != expected_url:
             return None
-        _, page = fetched
+        return url, referer
 
-        candidates = self._collect_manifests(page, page_url)
-        prefer_host = urlparse(fmt.get("source_url") or "").netloc or None
-        if prefer_host:
-            candidates.sort(key=lambda entry: 0 if urlparse(entry[0]).netloc == prefer_host else 1)
+    def _remember_manifest(self, page_url: str, url: str, referer: str) -> None:
+        key = (page_url or "").strip()
+        with self._manifest_cache_lock:
+            self._manifest_cache[key] = (
+                time.monotonic() + BROWSER_MANIFEST_TTL,
+                url,
+                referer or page_url,
+            )
 
-        return self._resolve_manifest(candidates, wanted_id=fmt.get("format_id"))
+    def _forget_manifest(self, page_url: str) -> None:
+        with self._manifest_cache_lock:
+            self._manifest_cache.pop((page_url or "").strip(), None)
+
+    def _browser_manifest(
+        self,
+        page_url: str,
+        related_previews: set[str],
+    ) -> Optional[tuple[str, str]]:
+        """Browser fallback, reusing a recent result and rejecting related cards."""
+        cached = self._cached_manifest(page_url)
+        if cached is not None and cached[0] not in related_previews:
+            logger.info("[scan] reusing cached browser manifest")
+            return cached
+
+        resolved = self._browser_resolve(page_url, related_previews)
+        if resolved is None:
+            return None
+        if resolved[0] in related_previews:
+            logger.info("[scan] browser only found a related-video preview; ignoring it")
+            return None
+        self._remember_manifest(page_url, resolved[0], resolved[1])
+        return resolved
+
+    @staticmethod
+    def _has_player_markup(page_html: str, embeds: list[str]) -> bool:
+        """True when a JS player may own the stream (so the browser is worth it)."""
+        if embeds:
+            return True
+        if re.search(r"<(?:iframe|video)\b|videojs|jwplayer|plyr", page_html, re.I):
+            return True
+        return bool(_JS_PLAYER_RE.search(page_html))
+
+    def _browser_resolve(
+        self,
+        page_url: str,
+        related_previews: set[str] | None = None,
+    ) -> Optional[tuple[str, str]]:
+        """Last resort: let a real browser expose the player's signed manifest."""
+        if not bool(self.config.get("browser_fallback", True)):
+            return None
+        try:
+            from core.download.browser_probe import sniff_media
+        except ImportError:
+            logger.info("[scan] browser fallback unavailable (playwright not installed)")
+            return None
+
+        try:
+            timeout = float(self.config.get("browser_timeout", 30))
+        except (TypeError, ValueError):
+            timeout = 30.0
+
+        media = sniff_media(
+            page_url,
+            proxy_url=self.proxy_url,
+            timeout=timeout,
+            block_ads=bool(self.config.get("browser_block_ads", True)),
+            exclude=related_previews or set(),
+        )
+        if media is None:
+            logger.info("[scan] browser fallback found no media")
+            return None
+
+        logger.info(f"[scan] browser fallback found media: {media.url}")
+        return media.url, media.referer or page_url
 
     def _to_video_info(self, info: dict, url: str) -> VideoInfo:
         # Spam links are cut out of the title; if nothing but the link was left,
@@ -651,6 +987,34 @@ class YtdlpClient:
     # ------------------------------------------------------------------
 
     def download(
+        self,
+        job,
+        on_progress: Callable[[dict], None] | None = None,
+        should_cancel: Callable[[], bool] | None = None,
+    ) -> DownloadResult:
+        """Download with the proxy the link was resolved with."""
+        mode = self._proxy_mode()
+        needs_tor = mode == "on" or (
+            mode == "auto" and self._requires_tor(job.url)
+        )
+        if self.configured_proxy():
+            needs_tor = False
+        if needs_tor and not self._ensure_tor():
+            needs_tor = False
+
+        with self._tor_scope(needs_tor):
+            result = self._download(job, on_progress, should_cancel)
+
+        if (
+            not result.ok
+            and result.error is not None
+            and result.error.code in (NETWORK, HTTP)
+        ):
+            # The cached signed URL may have expired; resolve it again next time.
+            self._forget_manifest(job.url)
+        return result
+
+    def _download(
         self,
         job,
         on_progress: Callable[[dict], None] | None = None,

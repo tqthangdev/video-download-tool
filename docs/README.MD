@@ -19,6 +19,8 @@ Prebuilt standalone builds (Windows / Linux) are published on [GitHub Releases](
 - **Clean output folder** — a job downloads into a hidden `.temp/<session>/<job_id>/` folder inside the output directory and only the finished file is moved out, so the folder never shows half-written files.
 - **Batch import** — load a list of URLs from a `.txt` file; the default quality/bitrate from the settings is applied to each.
 - **Generic media discovery** — when an extractor returns nothing usable (common on sites and their clones that build the player with plain JavaScript), the page and the player it loads are scanned for media URLs, and the better manifest is used. This needs no per-site configuration.
+- **JavaScript player fallback** — if the static scan still finds no stream, a hidden browser starts playback, captures the signed manifest, and hands it to yt-dlp. Ads, trackers and popups are filtered out.
+- **Tor proxy** — **Proxy → Auto** (default) keeps the normal network path and starts Tor only for a link that failed as blocked; **On** always uses Tor, **Off** never does. An already-running Tor on `9050`/`9150` is reused.
 - **Auto shutdown** when the queue finishes, with a countdown.
 - Bilingual UI (Vietnamese / English).
 
@@ -26,6 +28,7 @@ Prebuilt standalone builds (Windows / Linux) are published on [GitHub Releases](
 
 - **Python 3.10+**
 - **FFmpeg** — recommended. It is required for MP3 output and for merging video-only + audio streams (typical for 720p and above). Without it those options are not offered.
+- **Chrome / Chromium / Edge** — optional; needed for the JavaScript-player browser fallback.
 
 ## Installation
 
@@ -81,6 +84,12 @@ Both launchers install the dependencies automatically if they are missing. Or ru
 | `language` | yes | UI language (`vi` / `en`) |
 | `theme` | yes | UI theme: `system` (follows the OS), `light` or `dark` |
 | `network_enabled` | yes | Automatic per-host network fallback (see below) |
+| `proxy_mode` | menu | **Proxy → Auto / On / Off** (default `auto`) |
+| `proxy_url` | yes | Explicit SOCKS/HTTP proxy; overrides Tor when set |
+| `tor_timeout` | no | Seconds to wait for an on-demand Tor bootstrap |
+| `browser_fallback` | yes | Hidden-browser fallback for JavaScript / iframe players |
+| `browser_block_ads` | yes | Block ads, trackers and popups while the browser fallback runs |
+| `browser_timeout` | no | Seconds the browser probe may wait for a media request |
 | `default_audio_bitrates` | no | Bitrates offered in the MP3 group |
 | `request_timeout` | no | Per-request timeout, seconds |
 | `download_retry` | no | Retries for failed requests |
@@ -94,6 +103,30 @@ The sidebar toggles — **Auto add queue**, **Auto convert to mp3**, **Shutdown 
 ### Network fallback
 
 The app runs a small local CONNECT proxy (`core/network`) that yt-dlp and ffmpeg go through. On a hostname whose TLS handshake is silently dropped (a filter that lets TCP connect but never answers), the proxy retries the first flight split into two TLS records (`frag`) instead of sending the ClientHello whole; hosts that already work keep going `direct`. The choice is decided per hostname, learned from the traffic itself (never parsed from yt-dlp output), and remembered for 7 days in `data/network.json`; it is not applied to application errors (404, private video, login required). Turn it off with **Automatic network fallback** in Settings, and clear the learned hosts there too.
+
+### Tor / SOCKS proxy
+
+**Proxy → Auto** is the default. Tor is not started when the app launches: normal links use the direct path (and the local network fallback). If a link fails as blocked — a network error, an HTTP 403/429, a geo-block, or the page cannot be fetched — the app starts Tor on demand, retries that link through it, and remembers the URL so its later download also uses Tor. Other links keep the normal path, even while Tor is running. An already-running Tor on `9050` or `9150` (daemon or Tor Browser) is reused; otherwise the bundled / `PATH` `tor` binary is started with a private DataDirectory in `data/tor/`.
+
+**Proxy → On** starts Tor at launch and uses it for every link. **Proxy → Off** never uses Tor (and stops a Tor the app started). A Tor that was already running is left alone.
+
+yt-dlp gets the same proxy for the metadata extraction and the download, because a signed media URL is bound to the IP that extracted it — using the same exit IP for both avoids 403s. The app's `requests` calls (page scans, size checks) use it too.
+
+Advanced: an explicit proxy in **Settings → Proxy (SOCKS/HTTP)** — or the `YTDLP_PROXY` environment variable — overrides Tor. The format is the usual yt-dlp proxy URL, e.g.:
+
+```
+socks5h://127.0.0.1:9050
+```
+
+`socks5h` resolves DNS through Tor as well; `socks5` resolves locally. If no Tor binary is available, Auto keeps running the normal path (the blocked link stays failed) and On warns.
+
+### Browser fallback (JavaScript / iframe players)
+
+Some sites never put a media URL in the HTML: an iframe builds the player in JavaScript and asks its own API for a signed manifest. The static scan runs first; if the page has an iframe/player but no manifest, the app drives a real Chrome through **nodriver** (the window minimizes once the page has loaded), with **Playwright** as the fallback. It blocks ads/trackers/popups/images/fonts and media segments, tries to start playback, and captures the `.m3u8`/`.mpd`/`.mp4` request that belongs to the page's main video (related-video previews are ignored). yt-dlp then handles that URL. A resolved browser URL is cached for 5 minutes, so the preview and the download share one browser run; after that (or after a network/HTTP download failure) it is resolved again.
+
+Turn it off with **Browser fallback for JS players**. **Block ads in browser fallback** keeps the best-effort filter: known ad/tracker hosts and paths are blocked, popups are closed, and only the manifest is allowed through. Same-domain ad paths that do not look like ads can still load.
+
+The browser itself is not bundled: nodriver and Playwright both use an installed Chrome/Chromium/Edge (Playwright can also use its own Chromium after `playwright install chromium`). Without one, the app keeps its normal "unsupported" result. The probe adds a few seconds and only runs after the static scan fails.
 
 Output files are named after the video title (`<title>.mp4` / `<title>.mp3`). Titles longer than the filesystem limit are truncated safely, and spam links embedded in titles are stripped. While a job is running its data stays in `<output>/.temp/<session>/<job_id>/` and is moved into the output folder once complete, so partially downloaded files never appear there; scratch folders left by removed jobs are cleaned up on the next launch.
 
@@ -119,14 +152,17 @@ The external binaries the app needs are **bundled**, so a release only has to be
 
 - **FFmpeg** (`ffmpeg`/`ffprobe`) — merges video+audio and makes MP3.
 - **Deno** — the JavaScript runtime yt-dlp uses to solve YouTube's JS challenges.
+- **Tor** — the SOCKS proxy started on demand by **Proxy → Auto** (always by **On**); Tor Expert Bundle with its OpenSSL/libevent libraries and geoip files.
 
 Fetch them once before building:
 
 ```bash
-python tools/fetch_vendor.py     # downloads FFmpeg + Deno into vendor/
+python tools/fetch_vendor.py     # downloads FFmpeg + Deno + Tor into vendor/
 ```
 
 `scripts/build.py` picks them up automatically (and warns if they are missing). The official releases include them; CI runs the fetch before building.
+
+The browser fallback bundles the Playwright Python package but **not** a browser binary: it uses Chrome/Chromium/Edge installed on the host. If none is available, run `playwright install chromium` or install a browser; the app otherwise keeps its normal unsupported result.
 
 
 ## Project layout
@@ -136,9 +172,9 @@ run.py                  entry point (Qt + asyncio bridge, --update dispatch)
 start.sh / start.bat    launchers (run.py + scripts/setup.sh if needed)
 version.json            the running build's version
 core/                   headless backend (no Qt except engine.py)
-  download/             yt-dlp pipeline (extraction, download, format choices)
+  download/             yt-dlp pipeline + browser media probe (extraction, download, formats)
   storage/              queue persistence (SQLite job store + session registry)
-  network/              local CONNECT proxy fallback (stdlib only)
+  network/              local CONNECT proxy fallback + Tor SOCKS manager
   updater/              version check + self-update
 gui/
   app/                  MainWindow and its wiring

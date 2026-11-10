@@ -6,7 +6,7 @@ from pathlib import Path
 
 from qasync import asyncSlot
 
-from PyQt6.QtGui import QAction, QCursor, QIcon
+from PyQt6.QtGui import QAction, QActionGroup, QCursor, QIcon
 from PyQt6.QtWidgets import (
     QApplication,
     QDialog,
@@ -108,6 +108,7 @@ class MainWindow(QWidget):
         self.engine.progress.connect(self.right.update_progress)
         self.engine.finished.connect(self._update_buttons)
         self.engine.finished.connect(self._on_engine_finished)
+        self.engine.tor_failed.connect(self._on_tor_failed)
 
         self._apply_cursors()
         add_listener(self._retranslate)
@@ -177,6 +178,21 @@ class MainWindow(QWidget):
         self._sync_theme_checks()
 
         self.menu.addSeparator()
+
+        self.menu_proxy = self.menu.addMenu(tr("proxy_label"))
+        self.proxy_group = QActionGroup(self)
+        self.proxy_group.setExclusive(True)
+        self.act_proxy = {}
+        for mode in ("auto", "on", "off"):
+            action = QAction(tr(f"proxy_{mode}"), self)
+            action.setCheckable(True)
+            action.triggered.connect(
+                lambda _checked=False, mode=mode: self._set_proxy_mode(mode)
+            )
+            self.proxy_group.addAction(action)
+            self.menu_proxy.addAction(action)
+            self.act_proxy[mode] = action
+        self._sync_proxy_checks()
 
         self.act_settings = QAction(tr("settings"), self)
         self.act_settings.setShortcut("Ctrl+S")
@@ -306,6 +322,30 @@ class MainWindow(QWidget):
             action.setChecked(current_theme() == name)
 
     # =========================
+    # PROXY (TOR)
+    # =========================
+    def _set_proxy_mode(self, mode: str):
+        mode = mode if mode in ("auto", "on", "off") else "auto"
+        CONFIG["proxy_mode"] = mode
+        if not save_config(CONFIG):
+            self._show_message(tr("error"), tr("save_error"), critical=True)
+
+        self.engine.set_proxy_mode(mode)
+        self._sync_proxy_checks()
+
+    def _on_tor_failed(self, _reason: str):
+        if CONFIG.get("proxy_mode", "auto") == "off":
+            return
+        self._show_message(tr("proxy_label"), tr("proxy_tor_unavailable"))
+
+    def _sync_proxy_checks(self):
+        mode = str(CONFIG.get("proxy_mode", "auto")).lower()
+        if mode not in self.act_proxy:
+            mode = "auto"
+        for key, action in self.act_proxy.items():
+            action.setChecked(key == mode)
+
+    # =========================
     # SETTINGS / ABOUT
     # =========================
     def open_settings(self):
@@ -385,6 +425,10 @@ class MainWindow(QWidget):
         for name, action in self.act_theme.items():
             action.setText(tr(f"theme_{name}"))
         self._sync_theme_checks()
+        self.menu_proxy.setTitle(tr("proxy_label"))
+        for key, action in self.act_proxy.items():
+            action.setText(tr(f"proxy_{key}"))
+        self._sync_proxy_checks()
         self.act_settings.setText(tr("settings"))
         self.act_about.setText(tr("about"))
         self.act_quit.setText(tr("quit"))

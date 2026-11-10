@@ -119,11 +119,22 @@ def vendor_binaries() -> list[Path]:
     return paths
 
 
-def verify_bundle(dist_dir: Path, binaries: list[Path]) -> None:
+def tor_binaries() -> list[Path]:
+    """Tor ships as a folder: binary, its OpenSSL/libevent libraries and geoip."""
+    tor_dir = ROOT / "vendor" / "tor"
+    if not tor_dir.is_dir():
+        return []
+    return [path for path in sorted(tor_dir.iterdir()) if path.is_file()]
+
+
+def verify_bundle(dist_dir: Path, binaries: list[Path], tor_files: list[Path]) -> None:
     """Fail the build if a fetched binary or yt-dlp's JS solver is missing."""
     internal = dist_dir / "_internal"
 
     missing = [binary.name for binary in binaries if not (internal / binary.name).is_file()]
+    missing += [
+        path.name for path in tor_files if not (internal / "tor" / path.name).is_file()
+    ]
     if missing:
         raise SystemExit(
             "Missing from the bundle: "
@@ -226,6 +237,9 @@ def build(name: str, onefile: bool, console: bool) -> int:
         "qasync",
         "--hidden-import",
         "yt_dlp",
+        # requests imports PySocks lazily, so PyInstaller needs to be told.
+        "--hidden-import",
+        "socks",
     ]
 
     if sys.platform == "win32" and not console:
@@ -256,8 +270,37 @@ def build(name: str, onefile: bool, console: bool) -> int:
             file=sys.stderr,
         )
 
+    # Keep Tor out of the bundle root: its libssl/libcrypto may clash with the
+    # ones Python/FFmpeg load. core.network.tor points LD_LIBRARY_PATH here.
+    tor_files = tor_binaries()
+    for binary in tor_files:
+        command += ["--add-binary", f"{binary}{os.pathsep}tor"]
+    if not tor_files:
+        print(
+            "WARNING: no Tor in vendor/ — Proxy → On will need a system tor.",
+            file=sys.stderr,
+        )
+
     # yt-dlp reads its .js solver scripts from the package directory at runtime.
     command += ["--collect-data", "yt_dlp"]
+
+    # Browser fallback: the browser binary itself comes from the host
+    # (Chrome/Chromium/Edge), so only the Python package is bundled.
+    if importlib.util.find_spec("playwright") is not None:
+        command += ["--collect-all", "playwright"]
+    else:
+        print(
+            "WARNING: playwright is not installed — its browser fallback will "
+            "be unavailable in this build.",
+            file=sys.stderr,
+        )
+    if importlib.util.find_spec("nodriver") is not None:
+        command += ["--collect-all", "nodriver"]
+    else:
+        print(
+            "WARNING: nodriver is not installed — only Playwright will be used.",
+            file=sys.stderr,
+        )
 
     command.append(str(ROOT / "run.py"))
 
@@ -272,7 +315,7 @@ def build(name: str, onefile: bool, console: bool) -> int:
                 print(f"Removed bundled {library} (must come from the host)")
             verify_no_unbundled_libs(dist_dir)
         verify_assets(dist_dir)
-        verify_bundle(dist_dir, binaries)
+        verify_bundle(dist_dir, binaries, tor_files)
 
     entry_point = _entry_point(dist_dir, name, onefile)
     if not entry_point.is_file():
