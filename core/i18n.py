@@ -149,6 +149,8 @@ TRANSLATIONS = {
         # Settings fields
         "field_max_workers": "Số mục tải song song (worker)",
         "field_max_workers_desc": "Số mục được tải cùng lúc.\n\nKhuyến nghị: 3. Đặt quá cao khiến máy lag và dễ bị website chặn.",
+        "field_download_connections": "Số kết nối tải song song",
+        "field_download_connections_desc": "Số kết nối dùng khi tải MP4 trực tiếp hoặc fragment HLS/DASH.\n\nMặc định 8. Đặt 1 để tải một luồng. Server có thể giới hạn tổng băng thông nên tăng thêm không phải lúc nào cũng nhanh hơn.",
         "field_download_path": "Thư mục tải mặc định",
         "field_download_path_desc": "Thư mục mặc định để lưu file tải về.\n\nBạn vẫn có thể đổi thư mục ở màn hình chính.",
         "field_proxy_url": "Proxy (SOCKS/HTTP)",
@@ -335,6 +337,8 @@ TRANSLATIONS = {
         # Settings fields
         "field_max_workers": "Parallel downloads (workers)",
         "field_max_workers_desc": "How many items are downloaded at the same time.\n\nRecommended: 3. Setting it too high slows the machine down and may get blocked by websites.",
+        "field_download_connections": "Download connections",
+        "field_download_connections_desc": "Connections used for a direct MP4 or HLS/DASH fragments.\n\nDefault 8. Set 1 for a single stream. Servers often cap total bandwidth, so more connections is not always faster.",
         "field_download_path": "Default download folder",
         "field_download_path_desc": "Default folder where downloads are saved.\n\nYou can still change the folder on the main screen.",
         "field_proxy_url": "Proxy (SOCKS/HTTP)",

@@ -20,6 +20,7 @@ import os
 import re
 import shutil
 import sys
+import tempfile
 import threading
 import time
 from dataclasses import dataclass
@@ -284,7 +285,9 @@ async def _nodriver_probe(
             pass
 
     args = [
-        "--disable-blink-features=AutomationControlled",
+        # Do not pass --disable-blink-features=AutomationControlled here:
+        # Chrome shows an "unsupported command-line flag" infobar for it, and
+        # nodriver works without it.
         "--mute-audio",
         "--autoplay-policy=no-user-gesture-required",
         "--no-first-run",
@@ -300,12 +303,17 @@ async def _nodriver_probe(
     if proxy_arg:
         args.append(proxy_arg)
 
-    browser = await uc.start(
-        headless=_nodriver_headless(),
-        browser_args=args,
-        lang="en-US",
-    )
+    # A fresh profile per probe avoids a stale Chrome lock/profile left by a
+    # previous crash. Remove it after the browser is stopped.
+    profile_dir = tempfile.mkdtemp(prefix="vdt-browser-")
+    browser = None
     try:
+        browser = await uc.start(
+            headless=_nodriver_headless(),
+            browser_args=args,
+            lang="en-US",
+            user_data_dir=profile_dir,
+        )
         page = await browser.get(page_url)
         await page.send(cdp.network.enable())
         page.add_handler(cdp.network.RequestWillBeSent, on_request)
@@ -363,10 +371,19 @@ async def _nodriver_probe(
                     return best
         return _best_nodriver_candidate(candidates, page_url)
     finally:
-        try:
-            browser.stop()
-        except Exception:
-            pass
+        if browser is not None:
+            try:
+                browser.stop()
+            except Exception:
+                pass
+        # Chrome can keep files open for a moment after TERM; retry the
+        # per-probe profile cleanup so /tmp does not fill with stale profiles.
+        await asyncio.sleep(0.3)
+        for _ in range(10):
+            shutil.rmtree(profile_dir, ignore_errors=True)
+            if not os.path.exists(profile_dir):
+                break
+            await asyncio.sleep(0.3)
 
 
 def _nodriver_headless() -> bool:

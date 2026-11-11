@@ -27,6 +27,7 @@ from gui.common.widgets import make_checkbox, make_combo, make_help_button
 
 # Options offered by the Settings dropdowns.
 WORKER_OPTIONS = tuple(range(1, 11))
+CONNECTION_OPTIONS = (1, 2, 4, 8, 16)
 VIDEO_QUALITY_OPTIONS = ("360p", "480p", "720p", "1080p", "1440p", "2160p")
 AUDIO_BITRATE_OPTIONS = ("128k", "192k", "320k")
 
@@ -39,6 +40,8 @@ def _combo_options(key: str):
     """Choices for a settings key, or None when the field stays a text box."""
     if key == "max_workers":
         return [(str(value), value) for value in WORKER_OPTIONS]
+    if key == "download_connections":
+        return [(str(value), value) for value in CONNECTION_OPTIONS]
     if key == "default_video_quality":
         return [(value, value) for value in VIDEO_QUALITY_OPTIONS]
     if key == "default_audio_bitrate":
@@ -52,6 +55,7 @@ class SettingDialog(QDialog):
     # (i18n label key, config key, i18n description key)
     FIELDS = [
         ("field_max_workers", "max_workers", "field_max_workers_desc"),
+        ("field_download_connections", "download_connections", "field_download_connections_desc"),
         ("field_download_path", "download_path", "field_download_path_desc"),
         ("field_proxy_url", "proxy_url", "field_proxy_url_desc"),
         ("field_video_quality", "default_video_quality", "field_video_quality_desc"),

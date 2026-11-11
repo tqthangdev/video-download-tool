@@ -1,5 +1,5 @@
 from PyQt6.QtWidgets import QStyledItemDelegate
-from PyQt6.QtGui import QColor, QFontMetrics, QPixmap
+from PyQt6.QtGui import QColor, QFont, QFontMetrics, QPixmap
 from PyQt6.QtCore import Qt, QRect, QEvent, pyqtSignal
 
 from gui.common import theme
@@ -17,6 +17,12 @@ class QueueDelegate(QStyledItemDelegate):
     TRASH_SIZE = 16
     TRASH_GAP = 6
     TRASH_TOP_PADDING = 2
+
+    # The whole download status line (progress, speed, ETA, connections and
+    # size) uses the smallest font the theme already has, fixed at 12px.
+    STATUS_FONT_PX = 12
+
+    # Long status text is elided; its font is never resized to fit.
 
 
     def __init__(self, parent=None):
@@ -126,9 +132,13 @@ class QueueDelegate(QStyledItemDelegate):
                 fmt,
             )
 
-        # ================= line 2: status (left) + size (right) =================
-        size_width = metrics.horizontalAdvance(size) if size else 0
-        reserved = size_width + self.GAP if size else 0
+        # ================= line 2: fixed 12px status + size =================
+        line_font = QFont(painter.font())
+        line_font.setPixelSize(self.STATUS_FONT_PX)
+        line_metrics = QFontMetrics(line_font)
+        # The size label is always visible; the status line never steals it.
+        size_width = line_metrics.horizontalAdvance(size) if size else 0
+        reserved = size_width + self.GAP if size_width else 0
         status_rect = QRect(
             status_text_rect.left(),
             status_text_rect.top(),
@@ -136,27 +146,26 @@ class QueueDelegate(QStyledItemDelegate):
             status_text_rect.height(),
         )
 
+        painter.setFont(line_font)
         painter.setPen(QColor(_status_color(status)))
-
-        font = painter.font()
-        if metrics.horizontalAdvance(status) > status_rect.width():
-            font.setPointSizeF(max(2.0, font.pointSizeF() - 1))
-            while font.pointSizeF() > 2.0:
-                if QFontMetrics(font).horizontalAdvance(status) <= status_rect.width():
-                    break
-                font.setPointSizeF(max(2.0, font.pointSizeF() - 0.5))
-            painter.setFont(font)
-
         painter.drawText(
             status_rect,
             Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
-            status,
+            line_metrics.elidedText(
+                status, Qt.TextElideMode.ElideRight, status_rect.width()
+            ),
         )
 
         if size:
+            size_rect = QRect(
+                status_text_rect.right() - size_width,
+                status_text_rect.top(),
+                size_width,
+                status_text_rect.height(),
+            )
             painter.setPen(QColor(theme.color("text_dim")))
             painter.drawText(
-                status_text_rect,
+                size_rect,
                 Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter,
                 size,
             )

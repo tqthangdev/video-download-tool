@@ -54,7 +54,7 @@ def _human_eta(value) -> str:
 
 
 def format_progress(event: dict) -> str:
-    """Render a progress event as the queue status text (flow.md #23)."""
+    """Render a progress event as one queue status line (flow.md #23)."""
     status = event.get("status")
     if status == "finished":
         return "Processing..."
@@ -66,12 +66,27 @@ def format_progress(event: dict) -> str:
 
     if total:
         percent = int(downloaded / total * 100)
-        text = f"Downloading {percent}%  {_human_bytes(downloaded)} / {_human_bytes(total)}"
+        # The total size stays in the label on the right; this line shows the
+        # progress and the bytes downloaded so far.
+        text = f"Downloading {percent}%  {_human_bytes(downloaded)}"
     else:
         text = f"Downloading  {_human_bytes(downloaded)}"
 
-    extra = "  ".join(part for part in (speed, eta) if part)
-    return f"{text}  {extra}".strip()
+    try:
+        connections = int(event.get("connections") or 0)
+    except (TypeError, ValueError):
+        connections = 0
+
+    return "  ".join(
+        part
+        for part in (
+            text,
+            speed,
+            eta,
+            f"{connections} conn" if connections > 1 else "",
+        )
+        if part
+    )
 
 
 class Downloader:

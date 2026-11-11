@@ -907,8 +907,10 @@ class MainWindow(QWidget):
     @asyncSlot()
     async def toggle_pause_engine(self):
         if self.engine.running:
-            await self.engine.stop()
+            # Update the queue immediately; stopping a running yt-dlp thread
+            # can take a moment and must not delay the visible status.
             self.right.set_all_status("Paused")
+            await self.engine.stop()
         self._update_buttons()
 
     @asyncSlot()
@@ -918,7 +920,7 @@ class MainWindow(QWidget):
                 return
             if not self._check_save_path_exists():
                 return
-            self.right.set_all_status("Waiting")
+            self.right.set_all_status("Starting...")
             await self.engine.sync_paths(self.left.path_input.text().strip())
             await self.engine.start()
         self._update_buttons()

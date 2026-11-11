@@ -24,6 +24,12 @@ import requests
 import yt_dlp
 
 from core.download.format_selector import VIDEO, VideoInfo, normalize_formats
+from core.download.segmented import (
+    DEFAULT_CONNECTIONS,
+    MAX_CONNECTIONS,
+    SegmentedCancelled,
+    download_segmented,
+)
 from core.errors import (
     BLOCKED,
     CANCELLED,
@@ -41,6 +47,7 @@ from core.logger import logger
 from core.utils import (
     build_output_template,
     clean_title,
+    expected_output_path,
     get_resource_path,
     job_temp_dir,
     resolve_output_file,
@@ -898,6 +905,42 @@ class YtdlpClient:
         with self._manifest_cache_lock:
             self._manifest_cache.pop((page_url or "").strip(), None)
 
+    def _segmented_connections(self) -> int:
+        try:
+            connections = int(
+                self.config.get("download_connections", DEFAULT_CONNECTIONS)
+            )
+        except (TypeError, ValueError):
+            connections = DEFAULT_CONNECTIONS
+        connections = max(1, min(connections, MAX_CONNECTIONS))
+        if self._use_tor():
+            # Multiple streams over one Tor circuit do not add bandwidth.
+            connections = min(connections, 2)
+        return connections
+
+    def _can_segment(
+        self,
+        fmt: dict,
+        target_url: str,
+        output_ext: str,
+        connections: int,
+    ) -> bool:
+        if connections < 2 or output_ext != "mp4":
+            return False
+        if fmt.get("type") != "video":
+            return False
+        if "+" in str(fmt.get("format_id") or ""):
+            return False
+        if self.config.get("cookies_file") or self.config.get("cookies_from_browser"):
+            return False
+
+        path = urlparse(target_url).path.lower()
+        if path.endswith((".m3u8", ".mpd")):
+            return False
+        return path.endswith((".mp4", ".m4v", ".webm")) or (
+            str(fmt.get("ext") or "").lower() == "mp4"
+        )
+
     def _browser_manifest(
         self,
         page_url: str,
@@ -1038,12 +1081,50 @@ class YtdlpClient:
                 logger.warning(f"[{job.title}] could not refresh the media manifest; retrying the page")
 
         temp_dir = job_temp_dir(job.save_path, job.session_id, job.id)
+        temp_dir.mkdir(parents=True, exist_ok=True)
+        connections = self._segmented_connections()
+
+        # A direct MP4/WebM with byte ranges is fetched by several connections
+        # instead of yt-dlp's single stream. Anything else stays with yt-dlp.
+        if self._can_segment(fmt, target_url, output_ext, connections):
+            dest = expected_output_path(temp_dir, job.title, output_ext)
+            headers = {"User-Agent": _BROWSER_UA, **(manifest_headers or {})}
+            try:
+                ok = download_segmented(
+                    target_url,
+                    dest,
+                    connections=connections,
+                    headers=headers,
+                    proxies=self._requests_proxies(),
+                    timeout=float(self.config.get("request_timeout", 30)),
+                    on_progress=on_progress,
+                    should_cancel=should_cancel,
+                )
+            except SegmentedCancelled:
+                return DownloadResult(False, error=app_error(CANCELLED))
+            except Exception as exc:
+                logger.warning(
+                    f"[{job.title}] parallel download failed; using yt-dlp: {exc}"
+                )
+                ok = False
+            if ok:
+                return self._move_output_out(job, temp_dir, output_ext)
+
+        progress_hook = self._make_progress_hook(on_progress, should_cancel)
+        if connections > 1 and urlparse(target_url).path.lower().endswith((".m3u8", ".mpd")):
+            base_hook = progress_hook
+
+            def progress_hook(data, _base=base_hook, _connections=connections):
+                _base({**data, "connections": _connections})
+
         opts = self._base_opts({
             "format": fmt.get("format_id") or "best",
             "outtmpl": build_output_template(job.title),
             "paths": {"home": str(temp_dir)},
-            "progress_hooks": [self._make_progress_hook(on_progress, should_cancel)],
+            "progress_hooks": [progress_hook],
         })
+        # HLS/DASH fragments benefit from concurrency; direct downloads ignore it.
+        opts["concurrent_fragments"] = max(1, connections)
         if manifest_headers:
             opts["http_headers"] = manifest_headers
 
@@ -1117,4 +1198,5 @@ def _progress_event(data: dict) -> dict:
         "total_bytes": total,
         "speed": data.get("speed"),
         "eta": data.get("eta"),
+        "connections": data.get("connections"),
     }

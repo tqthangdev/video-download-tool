@@ -110,6 +110,7 @@ DEFAULT_CONFIG = {
     "theme": "system",
     "request_timeout": 30,
     "download_retry": 3,
+    "download_connections": 8,
     "cookies_file": "",
     "cookies_from_browser": "",
     "network_enabled": True,

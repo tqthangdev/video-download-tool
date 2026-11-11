@@ -20,6 +20,7 @@ Prebuilt standalone builds (Windows / Linux) are published on [GitHub Releases](
 - **Batch import** — load a list of URLs from a `.txt` file; the default quality/bitrate from the settings is applied to each.
 - **Generic media discovery** — when an extractor returns nothing usable (common on sites and their clones that build the player with plain JavaScript), the page and the player it loads are scanned for media URLs, and the better manifest is used. This needs no per-site configuration.
 - **JavaScript player fallback** — if the static scan still finds no stream, a hidden browser starts playback, captures the signed manifest, and hands it to yt-dlp. Ads, trackers and popups are filtered out.
+- **Fast download** — a direct MP4/WebM that supports Range is fetched by 8 parallel connections (4 MiB chunks); HLS/DASH runs 8 concurrent fragments. Falls back to one yt-dlp stream when the server does not support ranges.
 - **Tor proxy** — **Proxy → Auto** (default) keeps the normal network path and starts Tor only for a link that failed as blocked; **On** always uses Tor, **Off** never does. An already-running Tor on `9050`/`9150` is reused.
 - **Auto shutdown** when the queue finishes, with a countdown.
 - Bilingual UI (Vietnamese / English).
@@ -84,6 +85,7 @@ Both launchers install the dependencies automatically if they are missing. Or ru
 | `language` | yes | UI language (`vi` / `en`) |
 | `theme` | yes | UI theme: `system` (follows the OS), `light` or `dark` |
 | `network_enabled` | yes | Automatic per-host network fallback (see below) |
+| `download_connections` | yes | Parallel connections for direct MP4 / HLS-DASH fragments (default 8; `1` = single stream) |
 | `proxy_mode` | menu | **Proxy → Auto / On / Off** (default `auto`) |
 | `proxy_url` | yes | Explicit SOCKS/HTTP proxy; overrides Tor when set |
 | `tor_timeout` | no | Seconds to wait for an on-demand Tor bootstrap |
@@ -127,6 +129,12 @@ Some sites never put a media URL in the HTML: an iframe builds the player in Jav
 Turn it off with **Browser fallback for JS players**. **Block ads in browser fallback** keeps the best-effort filter: known ad/tracker hosts and paths are blocked, popups are closed, and only the manifest is allowed through. Same-domain ad paths that do not look like ads can still load.
 
 The browser itself is not bundled: nodriver and Playwright both use an installed Chrome/Chromium/Edge (Playwright can also use its own Chromium after `playwright install chromium`). Without one, the app keeps its normal "unsupported" result. The probe adds a few seconds and only runs after the static scan fails.
+
+### Fast download (parallel ranges)
+
+A direct MP4/WebM that advertises byte ranges is downloaded with up to **8 parallel connections** (4 MiB chunks) instead of yt-dlp's single stream; HLS/DASH uses 8 concurrent fragments. Set **Download connections** in Settings (1–16, default 8); `1` keeps the single-stream path. If the server ignores `Range`, the direct file falls back to yt-dlp. Under Tor it is capped at 2 connections.
+
+Many CDNs limit total bandwidth per IP: on the test host, 1, 8 and 32 connections all stayed around 2 MB/s, so more connections is not always faster.
 
 Output files are named after the video title (`<title>.mp4` / `<title>.mp3`). Titles longer than the filesystem limit are truncated safely, and spam links embedded in titles are stripped. While a job is running its data stays in `<output>/.temp/<session>/<job_id>/` and is moved into the output folder once complete, so partially downloaded files never appear there; scratch folders left by removed jobs are cleaned up on the next launch.
 
