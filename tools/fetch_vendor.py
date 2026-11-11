@@ -41,6 +41,12 @@ TOR_PLATFORM = {
     "linux": "linux-x86_64",
     "win32": "windows-x86_64",
 }
+# GitHub runners are sometimes served a challenge page instead of the index.
+# This stable bundle keeps the build working when that happens.
+TOR_FALLBACK_VERSIONS = ("16.0.1",)
+
+# Some mirrors (including dist.torproject.org) reject the default urllib UA.
+USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
 
 # BtbN ships FFmpeg (ffmpeg+ffprobe under bin/); Deno ships a single binary.
 SOURCES = {
@@ -70,7 +76,8 @@ def platform_key() -> str:
 def download(url: str, dest: Path) -> None:
     print(f"Downloading {url}")
     dest.parent.mkdir(parents=True, exist_ok=True)
-    with urllib.request.urlopen(url, timeout=300) as response, open(dest, "wb") as out:
+    request = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
+    with urllib.request.urlopen(request, timeout=300) as response, open(dest, "wb") as out:
         shutil.copyfileobj(response, out, length=1024 * 1024)
 
 
@@ -128,19 +135,41 @@ def already_fetched(tool: str, exe: str) -> bool:
 def latest_tor_version() -> str:
     """Newest stable Tor Browser version listed in the official index."""
     print(f"Looking up the current Tor version at {TORBROWSER_INDEX}")
-    with urllib.request.urlopen(TORBROWSER_INDEX, timeout=60) as response:
+    request = urllib.request.Request(
+        TORBROWSER_INDEX, headers={"User-Agent": USER_AGENT}
+    )
+    with urllib.request.urlopen(request, timeout=60) as response:
         listing = response.read().decode("utf-8", "replace")
-    versions = re.findall(r'href="(\d+)\.(\d+)/"', listing)
-    if not versions:
-        raise SystemExit("tor: could not find a stable version in the index.")
-    major, minor = max((int(a), int(b)) for a, b in versions)
-    return f"{major}.{minor}"
+    matches = re.findall(
+        r"""href=["'](\d+)\.(\d+)(?:\.(\d+))?/["']""", listing, re.I
+    )
+    if not matches:
+        raise RuntimeError("no stable version found in the index")
+    parsed = []
+    for major, minor, patch in matches:
+        version = f"{major}.{minor}" + (f".{patch}" if patch else "")
+        parsed.append((int(major), int(minor), int(patch or 0), version))
+    return max(parsed)[3]
 
 
-def fetch_tor(platform: str, exe: str) -> None:
-    version = latest_tor_version()
+def _url_exists(url: str) -> bool:
+    request = urllib.request.Request(
+        url, headers={"User-Agent": USER_AGENT}, method="HEAD"
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=30):
+            return True
+    except Exception:
+        return False
+
+
+def _fetch_tor_version(version: str, platform: str, exe: str) -> None:
     archive_name = f"tor-expert-bundle-{platform}-{version}.tar.gz"
     url = f"https://dist.torproject.org/torbrowser/{version}/{archive_name}"
+    # Tor Browser patch releases can appear in the index before their Expert
+    # Bundle does (e.g. 16.0.2); skip versions without a published bundle.
+    if not _url_exists(url):
+        raise RuntimeError("Expert Bundle not published for this version")
 
     with tempfile.TemporaryDirectory() as tmp:
         tmp_path = Path(tmp)
@@ -153,7 +182,7 @@ def fetch_tor(platform: str, exe: str) -> None:
 
         binaries = [path for path in unpacked.rglob(f"tor{exe}") if path.is_file()]
         if not binaries:
-            raise SystemExit("tor: expected binary not found in the archive.")
+            raise RuntimeError("expected binary not found in the archive")
         source = binaries[0].parent
 
         dest = VENDOR / "tor"
@@ -172,6 +201,28 @@ def fetch_tor(platform: str, exe: str) -> None:
                 target.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH
             )
             print(f"  {target.relative_to(ROOT)}")
+
+
+def fetch_tor(platform: str, exe: str) -> None:
+    versions = []
+    try:
+        latest = latest_tor_version()
+        versions.append(latest)
+    except Exception as exc:  # noqa: BLE001 - fall back to known bundles
+        print(f"tor: version lookup failed ({exc}); trying a fallback")
+    versions += [v for v in TOR_FALLBACK_VERSIONS if v not in versions]
+
+    last_error = None
+    for version in versions:
+        try:
+            print(f"tor: trying Expert Bundle {version}")
+            _fetch_tor_version(version, platform, exe)
+            return
+        except Exception as exc:  # noqa: BLE001 - try the next known version
+            last_error = exc
+            print(f"tor: version {version} failed: {type(exc).__name__}: {exc}")
+
+    raise SystemExit(f"tor: could not fetch an Expert Bundle ({last_error})")
 
 
 def main() -> int:
